@@ -27,7 +27,6 @@ function onExportFormatChange(el) {
 </script>
 
 <tal:block 
-	tal:on-error="structure python:'<div class=\042alert alert-danger\042>ERROR Missing ZMS User Roles or Filter Misconfiguration</div>'"
 	tal:define="global
 		filterIds python:here.getFilterIds();
 		filters python:[x for x in [here.getFilter(x) for x in filterIds] 

@@ -330,7 +330,7 @@ class PathHandler(object):
                 request.set('ZMS_SKIN', zms_skin)
                 request.set('ZMS_EXT', zms_ext)
                 request.set('lang', lang)
-                return self
+                return self.index_html
         
         # If there's no more names left to handle, return the path handling 
         # method to the traversal machinery so it gets called next

@@ -509,6 +509,6 @@ class MediaDb(
         
       # Return.
       if RESPONSE is not None:
-        RESPONSE.redirect('manage_properties?manage_tabs_message=%s'%urllib.quote(message))
+        RESPONSE.redirect('manage_properties?manage_tabs_message=%s'%urllib.parse.quote(message))
 
 ################################################################################

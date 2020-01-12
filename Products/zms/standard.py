@@ -49,6 +49,7 @@ import traceback
 import urllib.request, urllib.parse, urllib.error
 import zExceptions
 import six
+from xml.sax import saxutils
 # Product Imports.
 from . import _globals
 from . import _fileutil
@@ -337,7 +338,7 @@ html_quote:
 def html_quote(v, name='(Unknown name)', md={}):
   if not isinstance(v,str):
     v = str(v)
-  return cgi.escape(v, 1)
+  return saxutils.escape(v)
 
 
 def bin2hex(m):
@@ -1578,7 +1579,7 @@ def str_json(i, encoding='ascii', errors='xmlcharrefreplace', formatted=False, l
   elif i is not None:
     if type(i) is str:
       if not (i.strip().startswith('<') and i.strip().endswith('>')):
-        i = cgi.escape(i).encode(encoding, errors)
+        i = saxutils.escape(i).encode(encoding, errors)
       else:
         i = i.encode(encoding, errors)
     else:
