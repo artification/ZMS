@@ -385,7 +385,7 @@ class ObjAttrs(object):
         return self.zmi_input_autocomplete(self, name=elName, value=value, type=inputtype, ajax_url='ajaxGetObjOptions', obj_id=meta_id, attr_id=obj_attr['id'], lang_str=lang_str, enabled=enabled)
       
       #-- Select-Fields.
-      elif inputtype in ['multiselect', 'select']:
+      elif inputtype in ['multiselect', 'select', 'color']:
         optpl = self.getObjOptions(obj_attr, REQUEST)
         return self.getSelect(fmName, elName, value, inputtype, lang_str, mandatory, optpl, enabled)
       
@@ -955,13 +955,6 @@ class ObjAttrs(object):
     # --------------------------------------------------------------------------
     def setObjProperty(self, key, value, lang=None, forced=0):
       
-      #-- CUSTOM
-      if key not in self.getObjAttrs().keys():
-        self.REQUEST.set('pKey', key)
-        self.REQUEST.set('pValue', value)
-        self.getObjProperty('setObjProperty', self.REQUEST)
-        return
-      
       #-- Get definition.
       obj_attr = self.getObjAttr(key)
       
@@ -1236,7 +1229,7 @@ class ObjAttrsManager(object):
           dct['key'] = attr['id']
           dct['xml'] = attr['id'] not in ['created_uid','created_dt','change_uid','change_dt','work_uid','work_dt','internal_dict','change_history','master_version','major_version','minor_version']
           dct['datatype'] = attr['type']
-          if attr['type'] in ['autocomplete', 'password', 'select']:
+          if attr['type'] in ['autocomplete', 'password', 'select', 'color']:
             dct['type'] = attr['type']
             dct['datatype'] = 'string'
           elif attr['type'] in ['richtext']:

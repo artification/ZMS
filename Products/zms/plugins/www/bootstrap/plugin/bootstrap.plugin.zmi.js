@@ -335,8 +335,8 @@ $(function(){
 	$('table.table-hover tbody tr')
 		.dblclick( function(evt) {
 			var href = null;
-			if ((href==null || typeof href=="undefined") && $('a '+$ZMI.icon_selector("fa-pencil"),this).length > 0) {
-				return $('a '+$ZMI.icon_selector("fa-pencil"),this).parents("a:first").click();
+			if ((href==null || typeof href=="undefined") && $('a '+$ZMI.icon_selector("fa-pencil-alt"),this).length > 0) {
+				return $('a '+$ZMI.icon_selector("fa-pencil-alt"),this).parents("a")[0].click();
 			}
 			else if ((href==null || typeof href=="undefined")) {
 				href = $('a[target=]',this).attr('href');
@@ -410,7 +410,7 @@ $(function(){
 			addDnDHandlers(dropElem);
 			var that = this;
 			var c = 0;
-			$(".zmi-sortable > li").each(function() {
+			$('.zmi-sortable > li').each(function() {
 				if ($(this).attr("id") == that.id) {
 					// var pos = $(this).position();
 					var pos = $(this.previousSibling).position();
@@ -418,7 +418,7 @@ $(function(){
 					var href = id+'/manage_moveObjToPos?lang='+getZMILang()+'&pos:int='+c+'&fmt=json';
 					$.get(href,function(result){
 							var message = eval('('+result+')');
-							$ZMI.showMessage(pos,message,"alert-success zmi-dragged-info");
+							$ZMI.showMessage(pos, message, 'alert-success zmi-dragged-info');
 							$('.alert-success button').remove();
 						});
 				}
@@ -813,7 +813,7 @@ ZMI.prototype.initInputFields = function(container) {
 						+ '<div class="input-group form-multiautocomplete">'
 							+ '<input type="text" id="_'+id+'" class="form-control form-autocomplete" data-ajax-url="'+ajax_url+'" data-obj-id="'+obj_id+'" data-attr-id="'+attr_id+'"/>'
 							+ '<div class="input-group-append">'
-								+ '<a href="javascript:;"><i class="fas fa-plus text-primary"></i></a>'
+								+ '<a href="javascript:;" class="btn btn-secondary"><i class="fas fa-plus text-primary"></i></a>'
 							+ '</div>'
 						+ '</div><!-- .input-group -->');
 					var $inputgroup = $select.prev();
@@ -825,16 +825,16 @@ ZMI.prototype.initInputFields = function(container) {
 								return false;
 							}
 						});
-					$(".input-group-append",$inputgroup).click(function() {
+					$(".input-group-append .btn",$inputgroup).click(function() {
 							// get value
-							var $input = $(this).prev();
+							var $input = $("input",$inputgroup);
 							var v = $input.val();
 							if (v.length>0) {
 								$input.val("");
 								if ($select.children("option[value='"+v+"']").length==0) {
-								  $select.append('<option selected="selected" value="'+v+'" data-value="'+v+'">'+v+'</option>').removeClass("d-none");
-								  // rebuild multiselect
-								  $ZMI.multiselect(context);
+									$select.append('<option selected="selected" value="'+v+'" data-value="'+v+'">'+v+'</option>').removeClass("d-none");
+									// rebuild multiselect
+									$ZMI.multiselect(context);
 								}
 							}
 						});
@@ -927,7 +927,7 @@ ZMI.prototype.initInputFields = function(container) {
 						$label.prepend('<i class="fas fa-exclamation"></i>');
 					});
 			}
-				// Icon-Class
+			// Icon-Class
 			$('input.zmi-input-icon-clazz',this).each(function() {
 				$(this).wrap( '<div class="input-group"></div>' );
 				$(this).before('<span class="input-group-text"><i class="fas fa-invisible"></i></span>');
@@ -936,7 +936,7 @@ ZMI.prototype.initInputFields = function(container) {
 					var $input = $(this);
 					var $formGroup = $input.parents(".form-group");
 					var $i = $("i",$formGroup);
-					$i.replaceWith($ZMI.icon($input.val()));
+					$i.attr("class",$input.val());
 				};
 				$(this).change(fn).keyup(fn).change();
 			});
@@ -1077,7 +1077,7 @@ ZMI.prototype.showMessage = function(pos, message, context) {
 	var html = ''
 		+ '<div class="alert'+(typeof context=='undefined'?'':' '+context)+'" style="position:absolute;left:'+pos.left+'px;top:'+pos.top+'px;">'
 			+ '<button type="button" class="close" data-dismiss="alert">&times;</button>'
-			+ message
+			+ '<span class="message">' + message + '</span>'
 		+ '</div>';
 	$('body').append(html);
 	window.setTimeout('$(".alert").hide("slow")',2000);
@@ -2009,6 +2009,8 @@ function setTextFormatInput( tag, fmName, elName) {
 	if (typeof self.el == 'undefined') {
 		self.el = document.getElementsByName(elName)[0];
 	}
+	// Avoid loosing focus by fitting textarea to content amount
+	$('#' + elName ).height(document.getElementById(elName).scrollHeight);
 	formatSelected(tag,'<','>');
 }
 

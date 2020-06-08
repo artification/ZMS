@@ -23,6 +23,7 @@ from OFS.Image import Image, File
 from io import StringIO
 # from mimetools import choose_boundary
 from email.generator import _make_boundary as choose_boundary
+import base64
 import copy
 import time
 import urllib.request, urllib.parse, urllib.error
@@ -158,7 +159,14 @@ def uploadBlobField(self, clazz, file=b'', filename=''):
     file = file.read()
   except:
     pass
-  mt, enc = standard.guess_content_type(filename, file)
+  f = None
+  if type(file) is str:
+    f = re.findall('^data:(.*?);base64,([\s\S]*)$',file)
+  if f:
+    mt = f[0][0]
+    file = base64.b64decode(f[0][1])
+  else:
+    mt, enc = standard.guess_content_type(filename,file)
   if clazz in [_globals.DT_IMAGE, 'image'] or mt.startswith('image'):
     clazz = MyImage
   elif clazz in [_globals.DT_FILE, 'file']:
@@ -565,6 +573,9 @@ class MyBlob(object):
             standard.writeError(parent,'[__call__]: can\'t %s'%name)
         # Raise unauthorized error.
         else:
+          RESPONSE.setHeader('Expires', '-1')
+          RESPONSE.setHeader('Cache-Control', 'no-cache')
+          RESPONSE.setHeader('Pragma', 'no-cache')
           raise zExceptions.Unauthorized
         
         # Set custom response-headers:
@@ -666,6 +677,15 @@ class MyBlob(object):
       else:
         data = getattr(self, 'data', '')
       return data
+
+
+    """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+    MyBlob.getDataURI
+    """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+    getDataURI__roles__ = None
+    def getDataURI(self):
+      dataURI = 'data:%s;base64,%s'%(self.getContentType(),base64.b64encode(bytes(self.getData())))
+      return dataURI
 
 
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -860,9 +880,9 @@ class MyImage(MyBlob, Image):
       filename = _fileutil.getOSPath(_fileutil.extractFilename(getattr(self, 'filename', '')))
       if data2hex:
         if getattr(self, 'content_type', '').find('text/') == 0:
-          data = '<![CDATA[%s]]>'%str(self.getData( sender))
+          data = '<![CDATA[%s]]>'%self.getData( sender).decode()
         else:
-          data = standard.bin2hex(self.getData( sender))
+          data = standard.bin2hex(self.getData( sender)).decode()
         objtype = ' type="image"'
       else:
         filename = self.getFilename()
@@ -952,9 +972,9 @@ class MyFile(MyBlob, File):
       filename = _fileutil.getOSPath(_fileutil.extractFilename(getattr(self, 'filename', '')))
       if data2hex:
         if getattr(self, 'content_type', '').find('text/') == 0:
-          data = '<![CDATA[%s]]>'%str(self.getData( sender))
+          data = '<![CDATA[%s]]>'%self.getData( sender).decode()
         else:
-          data = standard.bin2hex(self.getData( sender))
+          data = standard.bin2hex(self.getData( sender)).decode()
         objtype = ' type="file"'
       else:
         filename = self.getFilename()
@@ -1006,6 +1026,14 @@ class MyBlobWrapper(object):
     getData__roles__ = None
     def getData(self, parent=None):
       return self.f.data
+
+    """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+    MyBlobWrapper.getDataURI:
+    """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+    getDataURI__roles__ = None
+    def getDataURI(self):
+      dataURI = 'data:%s;base64,%s'%(self.getContentType(),base64.b64encode(bytes(self.getData())))
+      return dataURI
 
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     MyBlobWrapper.__str__:

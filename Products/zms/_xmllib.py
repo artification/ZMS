@@ -18,6 +18,8 @@
 
 # Imports.
 from io import StringIO
+from DateTime import DateTime
+import collections
 import copy
 import os
 import pyexpat
@@ -109,7 +111,7 @@ def getXmlType(v):
     t = ' type="dictionary"'
   elif isinstance(v, list):
     t = ' type="list"'
-  elif isinstance(v, tuple) or isinstance(v, time.struct_time):
+  elif isinstance(v, tuple) or isinstance(v, time.struct_time) or isinstance(v, DateTime):
     t = ' type="datetime"'
   elif isinstance(v, _blobfields.MyImage):
     t = ' type="image"'
@@ -216,10 +218,10 @@ def xmlInitObjProperty(self, key, value, lang=None):
 # ------------------------------------------------------------------------------
 def xmlOnCharacterData(self, sData, bInCData):
     # -- TAG-STACK
-    if self.dTagStack.size() > 0:
+    if len(self.dTagStack) > 0:
       tag = self.dTagStack.pop()
       tag['cdata'] += sData
-      self.dTagStack.push(tag)
+      self.dTagStack.append(tag)
 
     # -- Return
     return 1  # accept any character data
@@ -234,16 +236,16 @@ def xmlOnUnknownStartTag(self, sTagName, dTagAttrs):
     tag['name'] = sTagName
     tag['attrs'] = dTagAttrs
     tag['cdata'] = ''
-    tag['dValueStack'] = self.dValueStack.size()
-    self.dTagStack.push(tag)
+    tag['dValueStack'] = len(self.dValueStack)
+    self.dTagStack.append(tag)
 
     # -- VALUE-STACK
 
     # ITEM (DICTIONARY|LIST)
     if sTagName in ['dict', 'dictionary']:
-      self.dValueStack.push({})
+      self.dValueStack.append({})
     elif sTagName == 'list':
-      self.dValueStack.push([])
+      self.dValueStack.append([])
     elif sTagName == 'item':
       pass
 
@@ -253,11 +255,11 @@ def xmlOnUnknownStartTag(self, sTagName, dTagAttrs):
 
     # LANGUAGE
     elif sTagName == 'lang':
-      if self.dValueStack.size() == 0:
-        self.dValueStack.push({})
+      if len(self.dValueStack) == 0:
+        self.dValueStack.append({})
 
     # PASS OBJECT-ATTRIBUTES
-    elif sTagName in self.getObjAttrs().keys():
+    elif sTagName in self.getObjAttrs():
       pass
 
     # SKIP OTHERS
@@ -274,7 +276,7 @@ def xmlOnUnknownStartTag(self, sTagName, dTagAttrs):
 def xmlOnUnknownEndTag(self, sTagName):
     # -- TAG-STACK
     tag = self.dTagStack.pop()
-    skip = len([x for x in self.oCurrNode.dTagStack.get_all() if x.get('skip')]) > 0
+    skip = len([x for x in self.oCurrNode.dTagStack if x.get('skip')]) > 0
     name = tag['name']
     attrs = tag['attrs']
     cdata = tag['cdata']
@@ -287,7 +289,7 @@ def xmlOnUnknownEndTag(self, sTagName):
       pass
     elif sTagName == 'item':
       item = cdata
-      if tag['dValueStack'] < self.dValueStack.size():
+      if tag['dValueStack'] < len(self.dValueStack):
         item = self.dValueStack.pop()
       else:
         item = cdata
@@ -298,7 +300,7 @@ def xmlOnUnknownEndTag(self, sTagName):
         value[key] = item
       if isinstance(value, list):
         value.append(item)
-      self.dValueStack.push(value)
+      self.dValueStack.append(value)
 
     # -- DATA (IMAGE|FILE) --
     #-----------------------
@@ -312,19 +314,19 @@ def xmlOnUnknownEndTag(self, sTagName):
         except:
           data = bytes(cdata,'utf-8')
         value['data'] = data
-      self.dValueStack.push(value)
+      self.dValueStack.append(value)
 
     # -- LANGUAGE --
     #--------------
     elif sTagName == 'lang':
       lang = attrs.get('id', self.getPrimaryLanguage())
-      if self.dValueStack.size() == 1:
+      if len(self.dValueStack) == 1:
         item = cdata
       else:
         item = self.dValueStack.pop()
       values = self.dValueStack.pop()
       values[lang] = item
-      self.dValueStack.push(values)
+      self.dValueStack.append(values)
 
     # -- OBJECT-ATTRIBUTES --
     #-----------------------
@@ -358,7 +360,7 @@ def xmlOnUnknownEndTag(self, sTagName):
         else:
           # -- Complex Attributes (Blob|Dictionary|List).
           value = None
-          if self.dValueStack.size() > 0:
+          if len(self.dValueStack) > 0:
             value = self.dValueStack.pop()
           if value is not None and \
              (datatype in _globals.DT_BLOBS or \
@@ -392,7 +394,7 @@ def xmlOnUnknownEndTag(self, sTagName):
                  value.keys()[0] == self.getPrimaryLanguage():
                 value = value[value.keys()[0]]
               xmlInitObjProperty(self, sTagName, value)
-            if self.dValueStack.size() > 0:
+            if len(self.dValueStack) > 0:
               raise "Items on self.dValueStack=%s" % self.dValueStack
 
           # -- Simple Attributes (String, Integer, etc.)
@@ -419,9 +421,11 @@ def xmlOnUnknownEndTag(self, sTagName):
         self.dValueStack.clear()
 
     # -- OTHERS --
-    #------------
+    #------------                            
     else:
-      value = self.dTagStack.pop()
+      value = None
+      if len(self.dTagStack):
+        self.dTagStack.pop()
       if value is None: value = {'cdata':''}
       cdata = value.get('cdata', '')
       cdata += '<' + tag['name']
@@ -431,7 +435,7 @@ def xmlOnUnknownEndTag(self, sTagName):
       cdata += '>' + tag['cdata']
       cdata += '</' + tag['name'] + '>'
       value['cdata'] = cdata
-      self.dTagStack.push(value)
+      self.dTagStack.append(value)
 
     return 1  # accept matching end tag
 
@@ -505,6 +509,8 @@ def toCdata(self, s, xhtml=False):
 
   # Return Text in CDATA.
   elif s is not None:
+    if type(s) is bytes:
+      s = str(s,'utf-8')
     # Hack for invalid characters
     s = s.replace(chr(30), '')
     # Hack for nested CDATA
@@ -594,7 +600,7 @@ def toXml(self, value, indentlevel=0, xhtml=False, encoding='utf-8'):
       xml.append('</list>')
 
     # Tuples (DateTime)
-    elif isinstance(value, tuple) or isinstance(value, time.struct_time):
+    elif isinstance(value, tuple) or isinstance(value, time.struct_time) or isinstance(value, DateTime):
       try:
         s_value = self.getLangFmtDate(value, 'eng', 'DATETIME_FMT')
         if len(s_value) > 0:
@@ -648,10 +654,24 @@ def getAttrToXml(self, base_path, data2hex, obj_attr, REQUEST):
         except:
           pass
 
-    # Objects.
+    #-- Blob-Fields
     if datatype in _globals.DT_BLOBS:
       xml += value.toXml(self, base_path, data2hex)
 
+    #-- Text-Fields
+    elif datatype in _globals.DT_TEXTS:
+      request = self.REQUEST
+      request.set('ExtensionPoint.ZReferableItem.getRefObjPath','disabled')
+      value = self.validateInlineLinkObj(value)
+      xml += toXml(self, value)
+      
+    #-- Url-Fields
+    elif datatype == _globals.DT_URL:
+      request = self.REQUEST
+      request.set('ExtensionPoint.ZReferableItem.getRefObjPath','disabled')
+      value = self.validateLinkObj(value)
+      xml += toXml(self, value)
+    
     # XML.
     elif datatype == _globals.DT_XML or \
          datatype == _globals.DT_BOOLEAN or \
@@ -713,7 +733,7 @@ def getObjToXml(self, REQUEST, deep=True, base_path='', data2hex=False):
   # Attributes.
   keys = self.getObjAttrs().keys()
   if self.getType() == 'ZMSRecordSet':
-    keys = ['active', self.getMetaobjAttrIds(self.meta_id)[0]]
+    keys = ['active', self.getMetaobjAttrIds(self.meta_id,types=['list'])[0]]
   for key in keys:
     obj_attr = self.getObjAttr(key)
     if obj_attr['xml'] or key in ['change_dt','change_uid','created_dt','created_uid']:
@@ -776,8 +796,8 @@ class XmlAttrBuilder(object):
       """ XmlAttrBuilder.parse """
 
       # prepare builder
-      self.dValueStack = _globals.MyStack()
-      self.dTagStack = _globals.MyStack()
+      self.dValueStack = collections.deque()
+      self.dTagStack = collections.deque()
 
       # create parser object
       p = pyexpat.ParserCreate()
@@ -835,16 +855,16 @@ class XmlAttrBuilder(object):
 
       # -- TAG-STACK
       tag = {'name':sTagName, 'attrs':dTagAttrs, 'cdata':''}
-      tag['dValueStack'] = self.dValueStack.size()
-      self.dTagStack.push(tag)
+      tag['dValueStack'] = len(self.dValueStack)
+      self.dTagStack.append(tag)
 
       # -- VALUE-STACK
       if sTagName == 'data':
-        self.dValueStack.push(None)
+        self.dValueStack.append(None)
       elif sTagName == 'dictionary':
-        self.dValueStack.push({})
+        self.dValueStack.append({})
       elif sTagName == 'list':
-        self.dValueStack.push([])
+        self.dValueStack.append([])
 
 
     ############################################################################
@@ -884,11 +904,11 @@ class XmlAttrBuilder(object):
           value = attrs.get(key)
           setattr(item, key, value)
         self.dValueStack.pop()
-        self.dValueStack.push(item)
+        self.dValueStack.append(item)
 
       # -- ITEM
       elif sTagName in ['item']:
-        if tag['dValueStack'] < self.dValueStack.size():
+        if tag['dValueStack'] < len(self.dValueStack):
           item = self.dValueStack.pop()
         else:
           item = cdata
@@ -899,7 +919,7 @@ class XmlAttrBuilder(object):
           value[key] = item
         if isinstance(value, list):
           value.append(item)
-        self.dValueStack.push(value)
+        self.dValueStack.append(value)
 
 
     ############################################################################
@@ -916,10 +936,10 @@ class XmlAttrBuilder(object):
       """ XmlAttrBuilder.OnCharacterData """
 
       # -- TAG-STACK
-      if self.dTagStack.size() > 0:
+      if len(self.dTagStack) > 0:
         tag = self.dTagStack.pop()
         tag['cdata'] += sData
-        self.dTagStack.push(tag)
+        self.dTagStack.append(tag)
 
 
     ############################################################################
@@ -1071,8 +1091,8 @@ class XmlBuilder(object):
         """ XmlBuilder.parse """
 
         # prepare builder
-        self.dTagStack = _globals.MyStack()
-        self.dTagStack.push({'tags':[]})
+        self.dTagStack = collections.deque()
+        self.dTagStack.append({'tags':[]})
 
         # create parser object
         p = pyexpat.ParserCreate()
@@ -1128,7 +1148,7 @@ class XmlBuilder(object):
     def OnStartElement(self, sTagName, dTagAttrs):
       """ XmlBuilder.OnStartElement """
       tag = {'name':sTagName, 'attrs':dTagAttrs, 'cdata':'', 'tags':[]}
-      self.dTagStack.push(tag)
+      self.dTagStack.append(tag)
 
 
     ############################################################################
@@ -1152,7 +1172,7 @@ class XmlBuilder(object):
         raise ParseError("Unmatching end tag (" + sTagName + ")")
 
       lTag = {}
-      lTag['level'] = self.dTagStack.size()
+      lTag['level'] = len(self.dTagStack)
       lTag['name'] = name
       lTag['attrs'] = attrs
       lCdata = lCdata.strip()
@@ -1163,7 +1183,7 @@ class XmlBuilder(object):
       parent = self.dTagStack.pop()
       parent['tags'].append(name)
       parent['tags'].append(lTag)
-      self.dTagStack.push(parent)
+      self.dTagStack.append(parent)
 
 
     ############################################################################
@@ -1180,7 +1200,7 @@ class XmlBuilder(object):
       """ XmlBuilder.OnCharacterData """
       tag = self.dTagStack.pop()
       tag['cdata'] = tag['cdata'] + sData
-      self.dTagStack.push(tag)
+      self.dTagStack.append(tag)
 
 
     ############################################################################

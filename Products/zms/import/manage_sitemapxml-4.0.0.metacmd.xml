@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" ?>
 
 <list>
   <item type="dictionary">
@@ -14,15 +14,17 @@
 ##
 # Author:   SNTL Publishing GmbH & Co. KG
 # WWW:      http://www.sntl-publishing.com
-# Date:     01.06.2018
-# Version:  0.99
+# Date:     02.02.2020
+# Version:  4.0.0
 # Comments: Create a multiligual static Google compliant sitemap for FTP-/HTML-Export
-#           Note: Uses the Config-Option "ASP.ip_or_domain" to set the URL path;
-#           isResource() / not public is excluded
-# Params:   Set variable URL1 '/content/' | '/' in this Code
-#           depending on your web server configuration, the 'content' node might be
-#           removed form published
+#           Note: Uses the "IP / Domain" under Configuration to set the URL path,
+#           make sure to set that correctly (w/o http://)!
+#           float-string conversion for prio-attr
+#           isResource() excluded
+# HINT:     Set Variable URL1 '/content/' | '/' depending on Webserver-config
 ##########################################################################################
+
+URL1 = '/' #or '/content/' depending on Webserver-config
 
 request = container.REQUEST
 response =  request.response
@@ -31,11 +33,15 @@ zms = context.content
 request.set('preview',None)
 standard_html_request = zms.f_standard_html_request(request)
 
-URL1 = '/content/' #or '/' depending on Webserver-config
 domain = zms.getConfProperty('ASP.ip_or_domain')
+if domain == None:
+    domain = ''
+protocol = zms.getConfProperty('ASP.protocol')
+if protocol == '' or protocol == None:
+    protocol = 'http'
+loc = ''
 node_count = 0
 sitemapxml = ''
-href = ''
 urlitems = []
 
 def get_all_date_attrs(node):
@@ -82,21 +88,19 @@ for lang in zms.getLanguages(request):
 		path = node.breadcrumbs_obj_path()
 		forbidden_nodes = [ ob for ob in path if not ( ob.hasPublicAccess() and ob.isActive(request) ) ]
 		# AVOID forbidden nodes and deep linking induced url repeating
-		if not forbidden_nodes and ( href != node.getHref2IndexHtml(request) ) :
+		if not forbidden_nodes and ( loc != node.getHref2IndexHtml(request) ):
 			node_count+=1
 			title = node.attr('titlealt')
-			href = node.getHref2IndexHtml(request)
-			try:
-				# Using long absolute url
-				loc = 'https://' + domain + URL1 + href.split('/content/')[1]
-			except:
-				# Using shorted url
-				loc = href
+			loc = node.getHref2IndexHtml(request)
+			# if loc.find(domain)<0  and loc.find('localhost')<0 and loc.find('127.0.0.1')<0 and loc.find('content')>0:
+			if loc.find(domain)<0  and loc.find('content')>0:
+				loc = 'https://' + domain + URL1 + node.getHref2IndexHtml(request).split('/content/')[1]
 			lastmod = get_lastmod(node)
 			changefreq = 'monthly'
 			priority = node.attr('attr_bot_priority')!='' and node.attr('attr_bot_priority') or '0.5'
 			urlitem = urlitem_tmpl%(title,loc,lastmod,changefreq,priority)
 			urlitems.append(urlitem)
+			#	urlitems.append('		<!-- ERROR: %s -->'%(node.getHref2IndexHtml(request)))
 
 sitemap_xml = urlset_tmpl%(node_count,'\n'.join(urlitems))
 
@@ -108,7 +112,7 @@ f = [f for f in root_node.objectValues('File') if f.getId()=='sitemap.xml'][0]
 f.manage_edit(title='SITEMAP', content_type='text/xml',precondition='', filedata=sitemap_xml)
 
 # FEEDBACK
-request.set('message','<a href="https://%s/sitemap.xml" target="_blank">sitemap.xml</a> successfully generated on %s visible pages'%(domain,node_count))
+request.set('message','<a href="%s" target="_blank">sitemap.xml</a> successfully generated on %s visible pages'%(f.absolute_url(),node_count))
 return request.get('message','ERROR: No Message')
 
 # TEST
@@ -118,20 +122,20 @@ return request.get('message','ERROR: No Message')
       </item>
       <item key="description"></item>
       <item key="execution" type="int">1</item>
-      <item key="icon_clazz"><![CDATA[icon-sitemap]]></item>
-      <item key="id"><![CDATA[manage_sitemapxml]]></item>
+      <item key="icon_clazz"><![CDATA[icon-sitemap fab fa-google]]></item>
+      <item key="id">manage_sitemapxml</item>
       <item key="meta_type"><![CDATA[Script (Python)]]></item>
       <item key="meta_types" type="list">
         <list>
-          <item><![CDATA[ZMS]]></item>
+          <item>ZMS</item>
         </list>
       </item>
-      <item key="name"><![CDATA[Generate sitemap.xml]]></item>
-      <item key="revision"><![CDATA[1.0.1]]></item>
+      <item key="name"><![CDATA[Generate Google Sitemap]]></item>
+      <item key="revision">4.0.0</item>
       <item key="roles" type="list">
         <list>
-          <item><![CDATA[ZMSAdministrator]]></item>
-          <item><![CDATA[ZMSEditor]]></item>
+          <item>ZMSAdministrator</item>
+          <item>ZMSEditor</item>
         </list>
       </item>
       <item key="title"><![CDATA[Generate sitemap.xml for Google]]></item>

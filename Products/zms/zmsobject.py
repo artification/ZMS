@@ -23,6 +23,7 @@ from DateTime.DateTime import DateTime
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 # TODO from Products.ZCatalog import CatalogPathAwareness
 import ZPublisher.HTTPRequest
+import collections
 import urllib.request, urllib.parse, urllib.error
 import re
 import string
@@ -399,7 +400,7 @@ class ZMSObject(ZMSItem.ZMSItem,
           offs = 1
           c = 0
           for metaObjAttr in metaObjAttrs:
-            if metaObjAttr[ 'type'] in [ 'constant', 'method', 'py', 'string', 'select']:
+            if metaObjAttr[ 'type'] in [ 'constant', 'method', 'py', 'string', 'select', 'color']:
               if c == offs:
                 v = self.getObjProperty( metaObjAttr[ 'id'], REQUEST)
                 if _globals.is_str_type(v):
@@ -430,7 +431,7 @@ class ZMSObject(ZMSItem.ZMSItem,
           offs = 0
           c = 0
           for metaObjAttr in metaObjAttrs:
-            if metaObjAttr[ 'type'] in [ 'constant', 'method', 'py', 'string', 'select']:
+            if metaObjAttr[ 'type'] in [ 'constant', 'method', 'py', 'string', 'select','color']:
               if c == offs:
                 v = self.getObjProperty( metaObjAttr[ 'id'], REQUEST)
                 if _globals.is_str_type(v):
@@ -555,7 +556,7 @@ class ZMSObject(ZMSItem.ZMSItem,
       size = 0
       keys = self.getObjAttrs().keys()
       if self.getType()=='ZMSRecordSet':
-        keys = [self.getMetaobjAttrIds(self.meta_id)[0]]
+        keys = [self.getMetaobjAttrIds(self.meta_id,types=['list'])[0]]
       for key in keys:
         objAttr = self.getObjAttr(key)
         value = self.getObjAttrValue( objAttr, REQUEST)
@@ -830,10 +831,14 @@ class ZMSObject(ZMSItem.ZMSItem,
         message += ' (in '+str(int((time.time()-t0)*100.0)/100.0)+' secs.)'
       
       # Return with message.
-      target_ob = self.getParentNode()
-      if redirect_self or target_ob is None:
+      if REQUEST.get('menulock',0) == 1:
         target_ob = self
-      target = REQUEST.get( 'manage_target', '%s/manage_main'%target_ob.absolute_url())
+        target = REQUEST.get( 'manage_target', '%s/manage_properties'%target_ob.absolute_url())
+      else:
+        target_ob = self.getParentNode()
+        if redirect_self or target_ob is None:
+          target_ob = self
+        target = REQUEST.get( 'manage_target', '%s/manage_main'%target_ob.absolute_url())
       target = self.url_append_params( target, { 'lang': lang, messagekey: message})
       target = '%s#zmi_item_%s'%( target, self.id)
       if RESPONSE is not None:
@@ -1406,9 +1411,10 @@ class ZMSObject(ZMSItem.ZMSItem,
       """ ZMSObject.manage_moveObjToPos """
       parent = self.getParentNode()
       if parent is not None:
-        childNodes = parent.getChildNodes(REQUEST)
+        id_prefix = standard.id_prefix(self.id)
+        childNodes = parent.getObjChildren(id_prefix,REQUEST)
         old = childNodes.index(self)
-        sibling_sort_ids = list(map(lambda x: x.sort_id,childNodes))
+        sibling_sort_ids = [x.sort_id for x in childNodes]
         sibling_sort_ids.remove(self.sort_id)
         pos = pos - 1
         if pos < len(sibling_sort_ids):
@@ -1416,7 +1422,7 @@ class ZMSObject(ZMSItem.ZMSItem,
         else:
           new_sort_id = int(sibling_sort_ids[-1][1:])+1
         self.setSortId(new_sort_id)
-        parent.normalizeSortIds(standard.id_prefix(self.id))
+        parent.normalizeSortIds(id_prefix)
       else:
         id = REQUEST['URL'].split('/')[-2]
         ids = self.getConfProperty('Portal.Clients',[])
@@ -1589,8 +1595,8 @@ class ZMSObject(ZMSItem.ZMSItem,
     def xmlOnStartElement(self, sTagName, dTagAttrs, oParentNode):
         standard.writeLog( self, "[xmlOnStartElement]: sTagName=%s"%sTagName)
         
-        self.dTagStack    = _globals.MyStack()
-        self.dValueStack  = _globals.MyStack()
+        self.dTagStack    = collections.deque()
+        self.dValueStack  = collections.deque()
         
         # WORKAROUND! The member variable "aq_parent" does not contain the right 
         # parent object at this stage of the creation process (it will later 

@@ -62,7 +62,7 @@ def recurse_addMediaDb(self, mediadb):
 
   # Process recordset.
   if self.getType()=='ZMSRecordSet':
-    key = self.getMetaobjAttrIds(self.meta_id)[0]
+    key = self.getMetaobjAttrIds(self.meta_id,types=['list'])[0]
     obj_attr = self.getObjAttr(key)
     lang = self.getPrimaryLanguage()
     for obj_vers in self.getObjVersions():
@@ -138,9 +138,6 @@ def manage_structureMediaDb(self, structure, REQUEST=None, RESPONSE=None):
       if os.path.isdir(filepath):
         traverse(filepath,p)
       elif os.path.isfile(filepath):
-        f = open(filepath,"rb")
-        data = f.read()
-        f.close()
         targetpath = mediadb.targetFile(filepath)
         standard.writeBlock( self, "[manage_structureMediaDb]: %s -> %s"%(filepath,targetpath))
         targetdir = os.sep.join(targetpath.split(os.sep)[:-1])
@@ -210,7 +207,7 @@ def recurse_delMediaDb(self, mediadb):
 
   # Process recordset.
   if self.getType()=='ZMSRecordSet':
-    key = self.getMetaobjAttrIds(self.meta_id)[0]
+    key = self.getMetaobjAttrIds(self.meta_id,types=['list'])[0]
     obj_attr = self.getObjAttr(key)
     lang = self.getPrimaryLanguage()
     for obj_vers in self.getObjVersions():
@@ -291,9 +288,17 @@ class MediaDb(
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     def __init__(self, location, structure=0):
       self.id = 'acl_mediadb'
-      self.location = location
+      self.setLocation(location)
       self.structure = structure
       _fileutil.mkDir(self.getLocation())
+
+    # --------------------------------------------------------------------------
+    # MediaDb.setLocation
+    # --------------------------------------------------------------------------
+    def setLocation(self, location):
+      if location.endswith('/'):
+        location = location[:-1]
+      self.location = location
 
     # --------------------------------------------------------------------------
     # MediaDb.getLocation
@@ -502,11 +507,12 @@ class MediaDb(
       """ MediaDb.manage_changeProperties """
       
       message = ''
-
+      
       # Change.
       if submit == 'Change':
-        self.location = REQUEST.get('location',self.location)
-        
+        location = REQUEST.get('location',self.location)
+        self.setLocation(location)
+
       # Return.
       if RESPONSE is not None:
         RESPONSE.redirect('manage_properties?manage_tabs_message=%s'%urllib.parse.quote(message))

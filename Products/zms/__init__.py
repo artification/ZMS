@@ -31,7 +31,6 @@ import codecs
 import fnmatch
 import os
 import re
-import stat
 # Product Imports.
 from . import standard
 from . import zms
@@ -59,6 +58,9 @@ try:
   registerFileExtension('eot', FSFile)
   registerFileExtension('woff', FSFile)
   registerFileExtension('woff2', FSFile)
+  registerFileExtension('mp3', FSFile)
+  registerFileExtension('mp4', FSFile)
+  registerFileExtension('json', FSFile)
 except:
   pass
 

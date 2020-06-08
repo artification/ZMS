@@ -183,6 +183,10 @@
 			<div class="card-body">
 				<div class="form-row">
 					<div class="controls save">
+						<div class="form-check form-check-inline align-middle" 
+							title="Menu Lock: Stay in the menu after clicking the save button.">
+							<input type="checkbox" name="menulock:int" value="1" /><i class="fas fa-lock pl-2"></i>
+						</div>
 						<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_%s'%action.upper())" tal:content="python:here.getZMILangStr('BTN_%s'%action.upper())">Action</button>
 						<button type="submit" name="btn" class="btn btn-secondary" tal:attributes="value python:here.getZMILangStr('BTN_CANCEL')" tal:content="python:here.getZMILangStr('BTN_CANCEL')">Cancel</button>
 					</div>
@@ -212,7 +216,7 @@
 										<div class="zmi-action btn-group dropleft">
 											<span class="d-none zmi-sort-id" tal:content="python:9990">the sort-id</span>
 											<button class="btn btn-secondary split-left"></button>
-											<button class="btn btn-secondary split-right dropdown-toggle" data-toggle="dropdown"><i class="fas fa-plus-sign"></i></button>
+											<button class="btn btn-secondary split-right dropdown-toggle" data-toggle="dropdown"><i class="fas fa-plus-square"></i></button>
 										</div><!-- .btn-group -->
 									</div><!-- .col-sm-10 -->
 								</li><!-- .zmi-item -->
@@ -235,7 +239,9 @@
 												+[[],['is-new']][int(childNode.inObjStates(['STATE_NEW'],request))] \
 												+[[],['is-modified']][int(childNode.inObjStates(['STATE_MODIFIED'],request))] \
 												+[[],['is-deleted']][int(childNode.inObjStates(['STATE_DELETED'],request))])">
-											<div tal:attributes="class python:'center%s'%([' inactive',''][childNode.isActive(request)])"
+											<div class="center"
+												tal:on-error="structure string: <code style='display:block'>ERROR: childNode.renderShort(request)</code>"  
+												tal:attributes="class python:'center%s'%([' inactive',''][childNode.isActive(request)])"
 												tal:content="structure python:childNode.renderShort(request)">
 												the rendered child-node
 											</div><!-- .center -->

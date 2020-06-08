@@ -559,7 +559,7 @@ class AccessManager(AccessableContainer):
     # --------------------------------------------------------------------------
     #  AccessManager.getSecurityUsers:
     # --------------------------------------------------------------------------
-    def getSecurityUsers(self):
+    def getSecurityUsers(self, acquired=False):
       userDefs = {}
       root = self.getRootElement()
       d = root.getConfProperty('ZMS.security.users', {})
@@ -567,15 +567,20 @@ class AccessManager(AccessableContainer):
         userDefs = copy.deepcopy(d)
       else:
         home_id = self.getHome().id
+        home_ids = list(self.getHome().getPhysicalPath())
         for name in d:
           value = d[name]
           nodes = value.get('nodes', {})
           nodekeys = [x for x in nodes if nodes[x].get('home_id') == home_id]
-          if len(nodekeys) > 0:
+          aq_nodekeys = [x for x in nodes if nodes[x].get('home_id') in home_ids]
+          if len(nodekeys) > 0 or (acquired and len(aq_nodekeys) > 0):
             userDef = {'nodes':{}}
             for key in value:
               if key not in userDef:
                 userDef[key] = value[key]
+            if acquired:
+              userDef['acquired'] = len(nodekeys) == 0
+              nodekeys.extend(aq_nodekeys)
             for nodekey in nodekeys:
               userDef['nodes'][nodekey] = nodes[nodekey]
             userDefs[name] = userDef

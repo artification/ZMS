@@ -22,7 +22,7 @@
 # Imports.
 from Products.PageTemplates.Expressions import SecureModuleImporter
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
-
+import sys
 
 # MD5
 import AccessControl
@@ -203,27 +203,11 @@ def get_size(v):
   @return: Size in bytes
   @rtype: C{int}
   """
-  size = 0
-  if v is not None:
-    if is_str_type(v):
-      size = size + len(v)
-    elif isinstance(v, list):
-      size = sum([get_size(x) for x in v])
-    elif isinstance(v, dict):
-      size = sum([get_size(x)+get_size(v[x]) for x in v])
-    elif isinstance(v, int) or isinstance(v, float):
-      size = size + 4
-    elif hasattr(v, 'get_real_size') and callable(getattr(v, 'get_real_size')):
-      try:
-        size = size + v.get_real_size()
-      except:
-        pass
-    elif hasattr(v, 'get_size') and callable(getattr(v, 'get_size')):
-      try:
-        size = size + v.get_size()
-      except:
-        pass
-  return size
+  if hasattr(v, 'get_real_size') and callable(getattr(v, 'get_real_size')):
+      return v.get_real_size()
+  elif hasattr(v, 'get_size') and callable(getattr(v, 'get_size')):
+      return v.get_size()
+  return sys.getsizeof(v)
 
 
 ################################################################################
@@ -321,63 +305,5 @@ class MySectionizer(object):
           for i in range(level, len(self.sections)):
             del self.sections[len(self.sections)-1]
           self.sections[level-1] = self.sections[level-1] + 1
-
-
-################################################################################
-# Define MyStack.
-################################################################################
-class MyStack(object):
-
-    # --------------------------------------------------------------------------
-    #  MyStack.__init__:
-    #
-    #  Constructor.
-    # --------------------------------------------------------------------------
-    def __init__(self):
-      self.clear()
-
-    # --------------------------------------------------------------------------
-    #  MyStack.__str__:
-    #
-    #  Returns a string representation of the object.
-    # --------------------------------------------------------------------------
-    def __str__(self):
-      s = ''
-      for el in self._stack:
-        s += str(el) + ';'
-      return s[:-1]
-
-    def size(self):
-      return len(self._stack)
-
-    def clear(self):
-      self._stack = []
-
-    def push(self, x):
-      self._stack.append(x)
-
-    def pop(self):
-      if len(self._stack) > 0:
-        return self._stack.pop()
-      else:
-        return None
-
-    def get_all(self):
-      return self._stack
-
-    def get(self, i=0):
-      if len(self._stack) > 0 and abs(i) < len(self._stack):
-        if i < 0:
-          return self._stack[len(self._stack)+i-1]
-        else:
-          return self._stack[i]
-      else:
-        return None
-
-    def top(self):
-      if len(self._stack) > 0:
-        return self._stack[len(self._stack)-1]
-      else:
-        return None
 
 ################################################################################

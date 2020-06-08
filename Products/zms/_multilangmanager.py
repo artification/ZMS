@@ -25,9 +25,8 @@ from zope.interface import implementer
 # Product Imports.
 from . import IZMSLocale
 from . import _fileutil
-from . import standard
-from . import _msexcelutil
 from . import _xmllib
+from . import standard
 
 
 # ------------------------------------------------------------------------------
@@ -76,6 +75,24 @@ def importXml(self, xml, createIfNotExists=1):
       _importXml( self, item, createIfNotExists)
   else:
     _importXml( self, value, createIfNotExists)
+
+def exportXml(self, ids, REQUEST=None, RESPONSE=None):
+  value = []
+  d = self.get_lang_dict()
+  for id in d:
+    item = d[id].copy()
+    item['key'] = id
+    if id in ids or len(ids) == 0:
+      value.append(item)
+  filename = 'export.langdict.xml'
+  # Export value with filename.
+  content_type = 'text/xml; charset=utf-8'
+  processing_instruction = '<?zms version=\'%s\'?>'%(self.zms_version())
+  export = self.getXmlHeader() + processing_instruction + standard.toXmlString(self, value, xhtml=True)
+  if RESPONSE:
+    RESPONSE.setHeader('Content-Type', content_type)
+    RESPONSE.setHeader('Content-Disposition', 'attachment;filename="%s"'%filename)
+  return export
 
 
 # ------------------------------------------------------------------------------
@@ -280,7 +297,8 @@ class MultiLanguageManager(object):
           metaobjAttr = self.getMetaobjAttr(metaobjId, metaobjAttrId)
           custom = metaobjAttr['custom']
           try:
-            d = eval(custom)
+            from ast import literal_eval
+            d = literal_eval(custom)
             if key in d and lang in d[key]:
               return d[key][lang]
           except:
@@ -588,7 +606,7 @@ class MultiLanguageManager(object):
     #
     #  Change property of language-dictionary.
     ############################################################################
-    def manage_changeLangDictProperties(self, lang, REQUEST, RESPONSE):
+    def manage_changeLangDictProperties(self, lang, REQUEST, RESPONSE=None):
         """ MultiLanguageManager.manage_changeLangDictProperties """
         
         # Delete.
@@ -625,16 +643,8 @@ class MultiLanguageManager(object):
         # Export.
         # -------
         elif REQUEST['btn'] == self.getZMILangStr('BTN_EXPORT'):
-          value = []
           ids = REQUEST.get('ids', [])
-          dict = self.get_lang_dict()
-          for id in dict:
-            item = dict[id].copy()
-            item['key'] = id
-            if id in ids or len(ids) == 0:
-              value.append(item)
-          meta = ['key']+self.getLangIds()
-          return _msexcelutil.export(self, value, meta)
+          return exportXml(self, ids, REQUEST, RESPONSE)
         
         # Import.
         # -------

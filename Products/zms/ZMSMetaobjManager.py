@@ -107,7 +107,7 @@ class ZMSMetaobjManager(object):
 
     # Globals.
     # --------
-    valid_types =     ['amount', 'autocomplete', 'boolean', 'date', 'datetime', 'dictionary', 'file', 'float', 'identifier', 'image', 'int', 'list', 'multiautocomplete', 'multiselect', 'password', 'richtext', 'select', 'string', 'text', 'time', 'url', 'xml']
+    valid_types =     ['amount', 'autocomplete', 'boolean', 'color', 'date', 'datetime', 'dictionary', 'file', 'float', 'identifier', 'image', 'int', 'list', 'multiautocomplete', 'multiselect', 'password', 'richtext', 'select', 'string', 'text', 'time', 'url', 'xml']
     valid_zopeattrs = ['method', 'py', 'zpt', 'interface', 'resource']
     valid_xtypes =    ['constant', 'delimiter', 'hint']+valid_zopeattrs
     valid_datatypes = sorted(valid_types+valid_xtypes)
@@ -149,6 +149,7 @@ class ZMSMetaobjManager(object):
             for key in list(attr):
               if not key in mandatory_keys:
                 del attr[key]
+          d['version'] = self.getMetaobjRevision(id)
           d['Attrs'] = d['attrs']
           del d['attrs']
           r[id] = d
@@ -330,10 +331,10 @@ class ZMSMetaobjManager(object):
         filename = '%s-%s.metaobj.xml'%(ids[0], revision)
       else:
         filename = 'export.metaobj.xml'
+      # Export value with filename.
       content_type = 'text/xml; charset=utf-8'
-      processing_instruction = '<?zms version=\'%s\'?>'%(context.zms_version())
+      processing_instruction = '<?zms version=\'%s\'?>'%(self.zms_version())
       export = self.getXmlHeader() + processing_instruction + standard.toXmlString(self, value, xhtml=True)
-      
       if RESPONSE:
         RESPONSE.setHeader('Content-Type', content_type)
         RESPONSE.setHeader('Content-Disposition', 'attachment;filename="%s"'%filename)
@@ -392,13 +393,11 @@ class ZMSMetaobjManager(object):
             v = obj.attr(tmpltId)
             break
           elif tmpltId not in ["standard_html"]:
-            tmpltDtml = getattr(obj, tmpltId, None)
-            if tmpltDtml is not None:
-              v = tmpltDtml(obj, obj.REQUEST)
-              try:
-                v = v.encode('utf-8')
-              except UnicodeDecodeError:
-                v = str(v)
+            tmplt = getattr(obj, tmpltId, None)
+            if tmplt is not None:
+              v = tmplt(obj, obj.REQUEST)
+              if type(v) is bytes:
+                v = v.decode('utf-8','ignore')
               break
       return v
 
@@ -748,7 +747,7 @@ class ZMSMetaobjManager(object):
         newCustom = ''
       if newType in ['resource'] and (isinstance(newCustom, str) or isinstance(newCustom, int)):
         newCustom = None
-      if newType not in ['*', 'autocomplete', 'multiautocomplete', 'multiselect', 'recordset', 'select']:
+      if newType not in ['*', 'autocomplete', 'color', 'multiautocomplete', 'multiselect', 'recordset', 'select']:
         newKeys = []
       if newType in self.getMetadictAttrs():
         newId = newType
@@ -757,9 +756,7 @@ class ZMSMetaobjManager(object):
       
       # Defaults for Insert
       method_types = [ 'method', 'py', 'zpt'] + self.valid_zopetypes
-      if oldId is None and \
-         newType in method_types and \
-         (newCustom == '' or not isinstance(newCustom, str)):
+      if oldId is None and not newCustom:
         if newType in [ 'method', 'DTML Method', 'DTML Document']:
           newCustom = ''
           newCustom += '<!-- '+ newId + ' -->\n'
@@ -771,7 +768,15 @@ class ZMSMetaobjManager(object):
           newCustom += '\n'
           newCustom += 'def ' + newId + '( self):\n'
           newCustom += '  return "This is the external method ' + newId + '"\n'
-        elif newType in [ 'zpt', 'Page Template']:
+        elif newType in [ 'zpt']:
+          newCustom = ''
+          newCustom += '<!-- '+ newId + ' -->\n\n'
+          newCustom += '<tal:block tal:define="zmscontext options/zmscontext;\n'
+          newCustom += '\t\ttitle python:zmscontext getTitle(request);">\n'
+          newCustom += '\t<h4 tal:content="structure title">the title</h4>\n'
+          newCustom += '</tal:block>\n\n'
+          newCustom += '<!--/ '+ newId + ' -->\n'
+        elif newType in [ 'Page Template']:
           newCustom = ''
           newCustom += '<span tal:replace="here/title_or_id">content title or id</span>'
           newCustom += '<span tal:condition="template/title" tal:replace="template/title">optional template title</span>'

@@ -33,7 +33,6 @@ import configparser
 import importlib
 import operator
 import os
-import stat
 import tempfile
 import time
 import urllib.request, urllib.parse, urllib.error
@@ -265,11 +264,10 @@ class ConfManager(
             else:
               for filepath in filepaths:
                 if os.path.exists( filepath):
-                  for filename in os.listdir(filepath+location):
+                  for filename in os.listdir(filepath + location):
                     path = filepath + filename
-                    mode = os.stat(path)[stat.ST_MODE]
-                    if not stat.S_ISDIR(mode):
-                      if filename not in filenames:
+                    if os.path.isfile(path):
+                      if path not in filenames:
                         filenames[path] = filename
           break
       # Filter.
@@ -405,7 +403,7 @@ class ConfManager(
       for container in self.getResourceFolders():
         for folder in [ getattr( container, 'css', None), container]:
           if folder is not None:
-            for ob in folder.objectValues(['DTML Method', 'DTML Document', 'File', 'Filesystem File']):
+            for ob in folder.objectValues(['DTML Method', 'DTML Document', 'File', 'Filesystem File','Filesystem DTML Method']):
               id = ob.getId()
               path = ob.getPhysicalPath()
               if len([x for x in path if x.endswith('css')]) > 0 and id not in ids:
@@ -716,6 +714,13 @@ class ConfManager(
         k = REQUEST.get( 'conf_key', '')
         if btn == 'Change':
           v = REQUEST.get( 'conf_value', '')
+          if type(v) is str:
+            if (v.startswith('{') and not v.startswith('{$') and v.endswith('}')) or (v.startswith('[') and v.endswith(']')):
+              try:
+                from ast import literal_eval
+                v = literal_eval(v)
+              except:
+                standard.writeError(self,'can\'t eval conf-property %s'%key)
           self.setConfProperty( k, v)
           if REQUEST.get('portal_clients'):
             for portalClient in self.getPortalClients():
@@ -861,13 +866,15 @@ class ConfManager(
       """ ConfManager.manage_customizeDesign """
       message = ''
       home = self.getHome()
-      section = REQUEST.get('section')
+      section = REQUEST.get('section','')
       
-      # Save.
+      # Save css.
       # -----
-      if btn == self.getZMILangStr('BTN_SAVE') and section == 'css':
-        css_id = REQUEST.get('id', '')
-        href = self.getConfProperty(css_id).replace('$ZMS_HOME/',self.getHome().id+'/')
+      if btn == self.getZMILangStr('BTN_SAVE') and section == 'added':
+        added_id = REQUEST.get('id', '')
+        fname= '%s.%s'%(added_id.split('.')[-1],added_id.split('.')[-2])
+        href = self.getConfProperty(added_id,'%s/%scommon/added/%s'%(self.getHome().id,[self.getConfProperty('ZMS.theme','')+'/',''][len(self.getConfProperty('ZMS.theme',''))==0],fname))
+        href = href.replace('$ZMS_HOME',self.getHome().id)
         href = href.replace('$ZMS_THEME/',[self.getConfProperty('ZMS.theme','')+'/',''][len(self.getConfProperty('ZMS.theme',''))==0])
         # Traverse to get object.
         ob = self.getHome()
@@ -877,30 +884,30 @@ class ConfManager(
             break
         # Set object
         if ob is not None:
-          ob.manage_edit(title=ob.title, content_type=ob.content_type, filedata=REQUEST[css_id])
+          ob.manage_edit(title=ob.title, content_type=ob.content_type, filedata=REQUEST[added_id])
         message = self.getZMILangStr('MSG_CHANGED')
       
-      # Save.
+      # Save theme.
       # -----
       elif btn == self.getZMILangStr('BTN_SAVE'):
         id = REQUEST.get('id', '')
         self.setConfProperty('ZMS.theme', id)
         message = self.getZMILangStr('MSG_CHANGED')
       
-      # Delete.
+      # Delete theme.
       # -------
       elif btn == self.getZMILangStr('BTN_DELETE'):
         ids = REQUEST.get('ids', [])
         home.manage_delObjects(ids)
         message = self.getZMILangStr('MSG_DELETED')%int(len(ids))
       
-      # Copy.
+      # Copy theme.
       # -----
       elif btn == self.getZMILangStr('BTN_COPY'):
         self.metaobj_manager.importTheme(id)
         message = self.getZMILangStr('MSG_IMPORTED')%('<code class="alert-success">'+id+'</code>')
       
-      # Import.
+      # Import theme.
       # -------
       elif btn == self.getZMILangStr('BTN_IMPORT'):
         file = REQUEST['file']
@@ -912,7 +919,7 @@ class ConfManager(
         _fileutil.remove( filepath)
         message = self.getZMILangStr('MSG_IMPORTED')%('<code class="alert-success">'+filename+'</code>')
       
-      # Insert.
+      # Insert theme.
       # -------
       elif btn == self.getZMILangStr('BTN_INSERT'):
         newId = REQUEST['newId']
