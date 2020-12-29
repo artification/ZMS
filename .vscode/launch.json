@@ -11,6 +11,7 @@
             "console": "integratedTerminal",
             "args": [
                 "-d",
+                "-v",
                 "/home/zope/instance/zms4_dev/etc/zope.ini"
             ],
             "env": {
@@ -21,6 +22,13 @@
                 "PYTHON": "/home/zope/vpy37/bin/python",
                 "SOFTWARE_HOME": "/home/zope/vpy37/bin/"
             },
+        },
+        {
+            "name":"Python3: Current File",
+            "type":"python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
         }
     ]
 }

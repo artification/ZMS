@@ -22,11 +22,32 @@ from Products.ExternalMethod import ExternalMethod
 from Products.PageTemplates import ZopePageTemplate
 from Products.PythonScripts import PythonScript
 import os
+import re
 # Product Imports.
-from . import standard
-from . import _fileutil
+from Products.zms import standard
+from Products.zms import _fileutil
 
 security = ModuleSecurityInfo('Products.zms.zopeutil')
+
+class MissingArtefactProxy(object):
+  def __init__(self, id, meta_type, data=None):
+    self.id=id
+    self.meta_type=meta_type
+    self.data = data
+  icon__roles__=None
+  def zmi_icon(self):
+    return 'fas fa-skull-crossbones text-danger'
+  def zmi_icon(self):
+    return icon_clazz(self)
+  getId__roles__=None
+  def getId(self):
+    return self.id
+  getData__roles__=None
+  def getData(self):
+    return self.data
+  absolute_url__roles__=None
+  def absolute_url(self):
+    return '#'
 
 def nextObject(container, meta_type):
   """
@@ -47,7 +68,7 @@ def getExternalMethodModuleName(container, id):
   return m
 
 security.declarePublic('addObject')
-def addObject(container, meta_type, id, title, data):
+def addObject(container, meta_type, id, title, data, permissions={}):
   """
   Add Zope-object to container.
   """
@@ -69,14 +90,17 @@ def addObject(container, meta_type, id, title, data):
     addFolder( container, id, title, data)
   elif meta_type == 'Z SQL Method':
     addZSqlMethod( container, id, title, data)
-  return getObject( container, id)
+  initPermissions(container, id, permissions)
+  return getObject(container, id)
 
 security.declarePublic('getObject')
-def getObject(container, id):
+def getObject(container, id, meta_type=None, default=None):
   """
   Get Zope-object from container.
   """
   ob = getattr(container, id, None)
+  if ob is None and meta_type in ['External Method']:
+    ob = MissingArtefactProxy(id, meta_type, default)
   return ob
 
 security.declarePublic('callObject')
@@ -109,39 +133,45 @@ def readData(ob, default=None):
     data = ob.raw
   elif ob.meta_type in [ 'File', 'Filesystem File', 'Filesystem Image', 'Image']:
     data = ob.data
-    try:
+    if not standard.is_bytes(data):
       b = b''
       while data is not None:
-        b += bytes(data.data)
+        b += data.data
         data = data.next
       data = b
-    except:
-      pass
   elif ob.meta_type in [ 'Filesystem Page Template', 'Filesystem Script (Python)', 'Page Template', 'Script (Python)']:
     data = ob.read()
-  elif ob.meta_type == 'External Method':
-    context = ob
-    id = ob.id
-    while context is not None:
-      m = getExternalMethodModuleName(context, id)
+  elif ob.meta_type in [ 'External Method']:
+    if isinstance(ob,MissingArtefactProxy):
+      return ob.getData()
+    else:
+      context = ob
+      id = ob.getId()
+      while context is not None:
+        m = getExternalMethodModuleName(context, id)
+        filepath = standard.getINSTANCE_HOME()+'/Extensions/'+m+'.py'
+        if os.path.exists(filepath):
+          break
+        try:
+          context = context.getParentNode()
+        except:
+          context = None
+      if context is None:
+        m = id
       filepath = standard.getINSTANCE_HOME()+'/Extensions/'+m+'.py'
       if os.path.exists(filepath):
-        break
-      try:
-        context = context.getParentNode()
-      except:
-        context = None
-    if context is None:
-      m = id
-    filepath = standard.getINSTANCE_HOME()+'/Extensions/'+m+'.py'
-    if os.path.exists(filepath):
-      f = open(filepath, 'rb')
-      data = f.read()
-      f.close()
+        f = open(filepath, 'rb')
+        data = standard.pystr(f.read(),encoding='utf-8')
+        f.close()
   elif ob.meta_type == 'Z SQL Method':
-    connection = ob.connection_id 
-    params = ob.arguments_src
-    data = '<connection>%s</connection>\n<params>%s</params>\n%s'%(connection,params,ob.src)
+    lines = []
+    lines.append('<connection>%s</connection>'%ob.connection_id)
+    lines.append('<params>%s</params>'%ob.arguments_src)
+    lines.append('<max_rows>%i</max_rows>'%ob.max_rows_)
+    lines.append('<max_cache>%i</max_cache>'%ob.max_cache_)
+    lines.append('<cache_time>%i</cache_time>'%ob.cache_time_)
+    lines.append(ob.src)
+    data = '\n'.join(lines)
   return data
 
 security.declarePublic('readObject')
@@ -169,22 +199,30 @@ def removeObject(container, id, removeFile=True):
     container.manage_delObjects(ids=[id])
 
 security.declarePublic('initPermissions')
-def initPermissions(container, id):
+def initPermissions(container, id, permissions={}):
   """
   Init permissions for Zope-object:
   - set Proxy-role 'Manager'
   - set View-permissions to 'Authenticated' and remove acquired permissions for manage-objects.
   """
-  ob = getattr( container, id)
-  ob._proxy_roles=('Authenticated', 'Manager')
-  permissions = []
+  ob = getattr( container, id, None)
+  if ob is None: return
+  
+  # apply proxy-roles
+  ob._proxy_roles=('Authenticated','Manager')
+  # manage-artefacts need at least view permission
   if id.find( 'manage_') >= 0:
-    ob.manage_role(role_to_manage='Authenticated', permissions=['View'])
-  else:
-    # activate all acquired permissions
-    permissions = [x['name'] for x in ob.permissionsOfRole('Manager') if x['selected'] == 'SELECTED']
-  # FIXME AttributeError: 'PythonScript' object has no attribute 'manage_historyCopy'
-  #ob.manage_acquiredPermissions(permissions)
+    permissions['Authenticated'] = list(set(permissions.get('Authenticated',[]) + ['View']))
+  # apply permissions for roles
+  role_permissions = []
+  for role in permissions:
+    permission = permissions[role]
+    ob.manage_role(role_to_manage=role,permissions=permission)
+    role_permissions = list(set(role_permissions+permission))
+  # activate all acquired permissions
+  manager_permissions = [x['name'] for x in ob.permissionsOfRole('Manager') if x['selected']=='SELECTED']
+  acquired_permissions = [x for x in manager_permissions if x not in role_permissions]
+  ob.manage_acquiredPermissions(acquired_permissions)
 
 def addDTMLMethod(container, id, title, data):
   """
@@ -270,17 +308,22 @@ def addZSqlMethod(container, id, title, data):
     pass
   if data:
     ob = getattr( container, id)
-    connection = data
-    connection = connection[connection.find('<connection>'):connection.find('</connection>')]
-    connection = connection[connection.find('>')+1:]
-    arguments = data
-    arguments = arguments[arguments.find('<params>'):arguments.find('</params>')]
-    arguments = arguments[arguments.find('>')+1:]
-    template = data
-    template = template[template.find('</params>'):]
-    template = template[template.find('>')+1:]
-    template = '\n'.join([x for x in template.split('\n') if len(x) > 0])
-    ob.manage_edit(title=title, connection_id=connection, arguments=arguments, template=template)
+    d = {}
+    d['connection'] = ob.connection_id
+    d['params'] = ob.arguments_src
+    d['max_rows'] = ob.max_rows_
+    d['max_cache'] = ob.max_cache_
+    d['cache_time'] = ob.cache_time_
+    for key in d:
+      f = re.findall('<%s>((.|\s)*?)</%s>\n'%(key,key),data)
+      if f:
+        value = f[0][0]
+        d[key] = value
+        data = data.replace('<%s>%s</%s>'%(key,value,key),'').strip()
+    ob.manage_edit(title=title,connection_id=d['connection'],arguments=d['params'],template=data) 
+    ob.max_rows_ = int(d['max_rows'])
+    ob.max_cache_ = int(d['max_cache'])
+    ob.cache_time_ = int(d['cache_time'])
 
 def addFile(container, id, title, data, content_type=None):
   """
@@ -288,7 +331,7 @@ def addFile(container, id, title, data, content_type=None):
   """
   if content_type is None:
     if type(data) is str:
-      data = bytes(data,'utf-8')
+      data = standard.pybytes(data,'utf-8')
     content_type, enc = standard.guess_content_type(id, data)
   container.manage_addFile(id=id, title=title, file=data, content_type=content_type)
   ob = getattr( container, id)

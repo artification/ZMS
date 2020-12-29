@@ -54,8 +54,8 @@
 			</div><!-- .form-group -->
 			<div class="form-row">
 				<div class="controls save">
-					<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_SAVE')" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
-					<button type="submit" name="btn" class="btn btn-secondary" tal:attributes="value python:here.getZMILangStr('BTN_CLOSE')" tal:content="python:here.getZMILangStr('BTN_CLOSE')">Close</button>
+					<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+					<button type="submit" name="btn" class="btn btn-secondary" value="BTN_CLOSE" tal:content="python:here.getZMILangStr('BTN_CLOSE')">Close</button>
 				</div><!-- .controls.save -->
 			</div><!-- .form-row -->
 		</form>
@@ -80,7 +80,7 @@
 			</div><!-- .form-group -->
 			<div class="form-group row">
 				<div class="col-sm-10">
-					<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_INSERT')" tal:content="python:here.getZMILangStr('BTN_INSERT')">Insert</button>
+					<button type="submit" name="btn" class="btn btn-primary" value="BTN_INSERT" tal:content="python:here.getZMILangStr('BTN_INSERT')">Insert</button>
 				</div><!-- .col-sm-10 -->
 			</div><!-- .form-group -->
 		</form>
@@ -108,7 +108,7 @@
 			</div><!-- .form-group -->
 			<div class="form-group row">
 				<div class="col-sm-10">
-					<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_IMPORT')" tal:content="python:here.getZMILangStr('BTN_IMPORT')">Import</button>
+					<button type="submit" name="btn" class="btn btn-primary" value="BTN_IMPORT" tal:content="python:here.getZMILangStr('BTN_IMPORT')">Import</button>
 				</div><!-- .col-sm-10 -->
 			</div><!-- .form-group -->
 		</form>
@@ -119,12 +119,9 @@
 	<input type="hidden" name="lang" tal:attributes="value request/lang">
 	<legend tal:content="python:here.getZMILangStr('TAB_CHARFORMATS')">Char-Formats</legend>
 	<table class="table table-sm table-striped table-bordered table-hover mb-0">
-	<colgroup>
-		<col width="40"/>
-	</colgroup>
 	<thead tal:condition="python:here.meta_type.find('Acquired')<0">
 		<tr>
-			<th>
+			<th class="meta-sort text-center">
 				<div class="btn-group">
 					<button class="btn btn-secondary" tal:attributes="title python:'%s/%s'%(here.getZMILangStr('BTN_SLCTALL'),here.getZMILangStr('BTN_SLCTNONE'))" onclick="zmiToggleSelectionButtonClick(this);return false"><i class="fas fa-check-square"></i></button>
 				</div>
@@ -132,7 +129,7 @@
 			<th>
 				<div class="btn-group">
 					<button class="btn btn-primary" tal:attributes="title python:here.getZMILangStr('BTN_INSERT')+'...'" onclick="zmiModal('#insertObj',{title:$(this).attr('title')});return false"><i class="fas fa-plus"></i></button>
-					<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_DELETE')+'...'" onclick="zmiDeleteObjBtnClick(this,{btn:getZMILangStr('BTN_DELETE'),key:'obj'});return false"><i class="fas fa-times"></i></button>
+					<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_DELETE')+'...'" onclick="zmiDeleteObjBtnClick(this,{btn:'BTN_DELETE',key:'obj'});return false"><i class="fas fa-times"></i></button>
 					<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_IMPORT')+'...'" onclick="zmiModal($('#importConf'),{title:$(this).attr('title')});return false"><i class="fas fa-upload"></i></button>
 					<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_EXPORT')+'...'" onclick="zmiExportBtnClick(this);return false"><i class="fas fa-download"></i></button>
 				</div>
@@ -142,7 +139,7 @@
 	<tbody>
 	<tal:block tal:repeat="format formats">
 		<tr>
-			<td style="text-align:center;">
+			<td class="meta-sort text-center">
 				<input type="checkbox" name="ids:list" tal:attributes="value python:format.get('id','')" />
 			</td>
 			<td>
@@ -164,7 +161,6 @@
 
 </tal:block>
 
-<div style="clear:both;">&nbsp;</div>
 </div><!-- #zmi-tab -->
 
 <script>
@@ -174,7 +170,7 @@
  */
 function zmiExportBtnClick(sender) {
 	var fm = $(sender).parents("form")[0];
-	var href = fm.action+'?lang='+getZMILang()+'&btn='+getZMILangStr('BTN_EXPORT');
+	var href = fm.action+'?lang='+getZMILang()+'&btn=BTN_EXPORT';
 	$('input[name="ids:list"]:checked',fm).each(function(){
 			href += '&'+$(this).attr("name")+'='+$(this).val();
 		});
@@ -201,7 +197,7 @@ function zmiDeleteObjBtnClick(sender,d) {
 
 $ZMI.registerReady(function(){
 		zmiModal('#editObj',{title:getZMILangStr('BTN_EDIT'),minWidth:800,remove:true})
-		$('button[name=btn][value='+getZMILangStr('BTN_CLOSE')+']').click(function() {
+		$('button[name=btn][value=BTN_CLOSE]').click(function() {
 				zmiModal("hide");
 				return false;
 			});

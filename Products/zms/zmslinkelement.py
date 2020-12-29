@@ -20,16 +20,15 @@
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 import sys
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import zmscontainerobject
-from . import zmscustom
-from . import zmsobject
-from . import zmsproxyobject
-from . import standard
-from . import _confmanager
-from . import _xmllib
-from . import _zreferableitem
+from Products.zms import zmscontainerobject
+from Products.zms import zmscustom
+from Products.zms import zmsobject
+from Products.zms import zmsproxyobject
+from Products.zms import standard
+from Products.zms import _confmanager
+from Products.zms import _xmllib
+from Products.zms import _zreferableitem
 
 
 """
@@ -146,10 +145,14 @@ class ZMSLinkElement(zmscustom.ZMSCustom):
     ############################################################################
     def manage_changeProperties(self, lang, REQUEST, RESPONSE): 
       """ ZMSLinkElement.manage_changeProperties """
-      
-      target = REQUEST.get( 'manage_target', '%s/manage_main'%self.getParentNode().absolute_url())
+
+      target_ob = self.getParentNode()
+      if REQUEST.get('menulock',0) == 1:
+        # Remain in Current Menu
+        target_ob = self
+      target = REQUEST.get( 'manage_target', '%s/manage_main'%target_ob.absolute_url())
       message = ''
-      if REQUEST.get('btn', '') not in  [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]:
+      if REQUEST.get('btn', '') not in  [ 'BTN_CANCEL', 'BTN_BACK']:
         try:
           
           ##### Object State ####
@@ -170,7 +173,7 @@ class ZMSLinkElement(zmscustom.ZMSCustom):
         ##### Failure Message ####
         except ConstraintViolation:
           target = REQUEST.get( 'manage_target', '%s/manage_main'%self.absolute_url())
-          message = "[ConstraintViolation]: " + str( sys.exc_info()[1])
+          message = "[ConstraintViolation]: " + standard.pystr( sys.exc_info()[1])
       
       # Return with message.
       target = self.url_append_params( target, { 'lang': lang, 'manage_tabs_message': message})

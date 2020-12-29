@@ -30,7 +30,7 @@
 					<button type="button" class="btn btn-secondary" tal:attributes="onclick python:'var url=$(\'span\',this).attr(\'data-url\')\073if(typeof url!=\'undefined\')window.open(url+\'/manage_main\')'">
 						<tal:block tal:repeat="SQLConnectionID python:[x for x in here.SQLConnectionIDs() if getattr(here,'connection_id','')==x[1]]">
 							<span tal:attributes="data-url python:getattr(here,SQLConnectionID[1]).absolute_url()">
-								<img tal:attributes="src python:getattr(here,SQLConnectionID[1]).icon"/>
+								<i class="fas fa-database"></i>
 								<tal:block tal:content="python:SQLConnectionID[1]">SQLConnectionID</tal:block>
 							</span>
 						</tal:block>
@@ -42,7 +42,7 @@
 						<tal:block tal:repeat="SQLConnectionID python:here.SQLConnectionIDs()">
 								<a class="dropdown-item" href="javascript:;" tal:attributes="onclick python:'javascript:$(\'#connection_id\').val(\'%s\')\073$(\'button:first\',$(this).parents(\'.btn-group\')).html($(this).html())'%SQLConnectionID[1]">
 									<span tal:attributes="data-url python:getattr(here,SQLConnectionID[1]).absolute_url()">
-										<img tal:attributes="src python:getattr(here,SQLConnectionID[1]).icon"/>
+										<i class="fas fa-database"></i>
 										<tal:block tal:content="python:SQLConnectionID[1]">SQLConnectionID</tal:block>
 									</span>
 								</a>
@@ -67,7 +67,7 @@
 		</div><!-- .form-group -->
 		<div class="form-row">
 			<div class="controls save">
-				<button type="submit" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_SAVE')" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+				<button type="submit" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
 			</div>
 		</div>
 		</div><!-- .card-body -->
@@ -75,7 +75,6 @@
 	</div><!-- .card -->
 </form>
 
-<div style="clear:both;">&nbsp;</div>
 </div><!-- #zmi-tab -->
 <tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
 </body>

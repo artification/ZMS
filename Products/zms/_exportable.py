@@ -17,24 +17,24 @@
 ################################################################################
 
 # Imports.
+from __future__ import absolute_import
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 from App.Common import package_home
 from OFS.Image import Image
 import codecs
 import copy
-import urllib.request, urllib.parse, urllib.error
 import tempfile
 import os
 import re
 import sys
 # Product Imports.
-from . import standard
-from . import _blobfields
-from . import _fileutil
-from . import _filtermanager
-from . import _globals
-from . import _xmllib
+from Products.zms import _blobfields
+from Products.zms import _fileutil
+from Products.zms import _filtermanager
+from Products.zms import _globals
+from Products.zms import _xmllib
+from Products.zms import standard
 
 
 def writeFile(self, filename, data, mode='w', encoding='utf-8'):
@@ -59,7 +59,7 @@ def exportFiles(self, root, id, path):
       try:
         ob_id = ob.id()
       except:
-        ob_id = str(ob.id)
+        ob_id = standard.pystr(ob.id)
       _fileutil.exportObj(ob, '%s/%s'%(path, ob_id))
 
 
@@ -70,14 +70,10 @@ def exportFolder(self, root, path, id, REQUEST, depth=0):
   if hasattr(root, id):
     folder = getattr(root, id)
     for ob in folder.objectValues():
+      ob_id = ob.getId()
       if ob.meta_type == 'Folder':
-        ob_id = ob.id
         exportFolder(self, ob, '%s/%s'%(path, id), ob_id, REQUEST, depth+1)
       elif 'content' not in folder.objectIds(['ZMS']):
-        try:
-          ob_id = ob.id()
-        except:
-          ob_id = str(ob.id)
         if ob.meta_type in [ 'DTML Document', 'DTML Method', 'Page Template', 'Script (Python)']:
           try:
             if ob.meta_type in [ 'DTML Document', 'DTML Method', 'Page Template']:
@@ -127,11 +123,11 @@ def localHtml(self, html):
     default_charset = 'utf-8'
     charset = self.REQUEST.get('ZMS_CHARSET', default_charset)
     if not isinstance(html, str):
-      html = str( html, default_charset)
+      html = standard.pystr( html, default_charset)
     html = html.encode( charset)
   except ( UnicodeDecodeError, UnicodeEncodeError):
     standard.writeError( self, "[localHtml]")
-    v = str(sys.exc_info()[1])
+    v = standard.pystr(sys.exc_info()[1])
     STR_POSITION = ' position '
     i = v.find(STR_POSITION)
     if i > 0:
@@ -202,7 +198,7 @@ def localIndexHtml(self, obj, level, html, xhtml=False):
    html = html.replace(s_old, s_new)
    
    # Remove preview parameters.
-   html = re.sub('(\?|&)preview=preview', '', html)
+   html = re.sub(r'(\?|&)preview=preview', '', html)
    
    # Process declarative URLs
    if self.getConfProperty('ZMS.pathhandler', 0):
@@ -309,7 +305,7 @@ class Exportable(_filtermanager.FilterItem):
         content_type = 'text/xml'
       
       # Export Filter.
-      elif export_format in self.getFilterIds():
+      elif export_format in self.getFilterManager().getFilterIds():
         if REQUEST.get('debug'):
           url = self.url_append_params( 'manage_importexportDebugFilter', { 'lang': lang, 'filterId': export_format, 'debug': 1})
           return RESPONSE.redirect( url)
@@ -406,9 +402,6 @@ class Exportable(_filtermanager.FilterItem):
       ressources = []
       
       if from_zms:
-        folder = 'misc_/zms'
-        for obj_id in self.misc_.zms._d.keys():
-          _fileutil.exportObj(self.misc_.zms[obj_id], '%s/%s/%s'%(tempfolder, folder, obj_id))
         exportFiles( self, self.getDocumentElement(), 'metaobj_manager', '%s/metaobj_manager'%tempfolder)
       
       if from_home:
@@ -512,7 +505,7 @@ class Exportable(_filtermanager.FilterItem):
         
         # Blank lines in includes cause PHP session errors
         # @see http://bugs.php.net/bug.php?id=8974
-        html = standard.re_sub('^\s*', '', html)
+        html = standard.re_sub(r'^\s*', '', html)
         
         # Localize html.
         html = localHtml( obj, html)

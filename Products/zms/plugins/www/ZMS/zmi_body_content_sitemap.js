@@ -35,10 +35,10 @@ function zmiToggleClick(toggle, callback) {
 		var base = $ZMI.getPhysicalPath();
 		base = base.substr(0,base.indexOf('/'+homeId));
 		// Set wait-cursor.
-		$container.append( '<div id="loading" class="zmi-page"><i class="icon-spinner icon-spin"></i>&nbsp;&nbsp;'+getZMILangStr('MSG_LOADING')+'<'+'/div>');
+		$container.append( '<div id="loading" class="zmi-page"><i class="icon-spinner icon-spin fas fa-spinner fa-spin"></i>&nbsp;&nbsp;'+getZMILangStr('MSG_LOADING')+'<'+'/div>');
 		// JQuery.AJAX.get
-		$ZMI.writeDebug('zmiToggleClick:'+base+href+'/manage_ajaxGetChildNodes?lang='+getZMILang());
-		$.get(base+href+'/ajaxGetChildNodes',{lang:getZMILang(),'meta_types:int':0},function(data){
+		var params = {lang:getZMILang(),preview:'preview','meta_types:int':0,'get_attrs:int':0};
+		$.get(base+href+'/ajaxGetChildNodes',params,function(data){
 				// Reset wait-cursor.
 				$("#loading").remove();
 				// Get and iterate pages.
@@ -90,13 +90,13 @@ function zmiRefresh() {
 	var $ol = $("ol:first");
 	var id = $ol.attr("data-id");
 	var homeId = $ol.attr("data-home-id");
-	$ZMI.writeDebug('zmiRefresh: id='+id+'; homeId='+homeId);
+	console.log('zmiRefresh: id='+id+'; homeId='+homeId);
 	var href = $ZMI.getPhysicalPath();
 	try {
 		href = self.window.parent.manage_main.$ZMI.getPhysicalPath();
 	}
 	catch(e) {
-		$ZMI.writeDebug('zmiRefresh: cannot get physical-path from parent - ' + e);
+		console.log('zmiRefresh: cannot get physical-path from parent - ' + e);
 	}
 	href = href.substr(href.indexOf(homeId));
 	var ids = href.split('/');

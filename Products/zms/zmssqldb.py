@@ -22,15 +22,15 @@ from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 import copy
-import urllib.request, urllib.parse, urllib.error
 import time
 import zExceptions
 # Product Imports.
-from . import zmscustom
-from . import standard
-from . import _confmanager
-from . import _fileutil
-from . import _globals
+from Products.zms import _confmanager
+from Products.zms import _fileutil
+from Products.zms import _globals
+from Products.zms import standard
+from Products.zms import zmscustom
+from Products.zms import zopeutil
 
 
 ################################################################################
@@ -64,7 +64,7 @@ def manage_addZMSSqlDb(self, lang, _sort_id, REQUEST, RESPONSE):
   # Return with message.
   if REQUEST.RESPONSE:
     message = self.getZMILangStr('MSG_INSERTED')%obj.display_type(REQUEST)
-    REQUEST.RESPONSE.redirect('%s/%s/manage_main?lang=%s&manage_tabs_message=%s'%(self.absolute_url(), obj.id, lang, urllib.parse.quote(message)))
+    REQUEST.RESPONSE.redirect('%s/%s/manage_main?lang=%s&manage_tabs_message=%s'%(self.absolute_url(), obj.id, lang, standard.url_quote(message)))
 
 
 ################################################################################
@@ -107,7 +107,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
         )
     __administratorPermissions__ = (
         'manage_properties', 'manage_changeProperties', 'manage_changeTempBlobjProperty',
-        'manage_configuration', 'manage_changeConfiguration',
+        'manage_configuration','manage_configuration_table', 'manage_changeConfiguration',
         )
     __ac_permissions__=(
         ('ZMS Author', __authorPermissions__),
@@ -123,6 +123,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
     manage_main = PageTemplateFile('zpt/ZMSSqlDb/manage_main', globals())
     manage_properties = PageTemplateFile('zpt/ZMSSqlDb/manage_properties', globals())
     manage_configuration = PageTemplateFile('zpt/ZMSSqlDb/manage_configuration', globals())
+    manage_configuration_table = PageTemplateFile('zpt/ZMSSqlDb/manage_configuration_table', globals())
 
     # Valid Types.
     # ------------
@@ -163,10 +164,11 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
     # --------------------------------------------------------------------------
     def getModelContainer( self):
       id = 'sqlmodel.xml'
-      if id not in self.objectIds(['DTML Method']):
-        model_xml =  getattr(self, 'model_xml', '<list>\n</list>')
-        self.manage_addDTMLMethod( id, 'SQL-Model (XML)', model_xml)
-      return getattr( self, id)
+      container = zopeutil.getObject(self,id)
+      if container is None:
+        model_xml =  getattr(self, 'model_xml', standard.str_json([]))
+        container = zopeutil.addObject(self,'DTML Method',id,'SQL-Model (XML)',model_xml)
+      return container
 
 
     # --------------------------------------------------------------------------
@@ -174,10 +176,10 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
     # --------------------------------------------------------------------------
     def getModel(self):
       container = self.getModelContainer()
-      container_xml = container.raw
+      container_xml = zopeutil.readData(container)
       model_xml =  getattr(self, 'model_xml', None)
       if model_xml is None:
-        model_xml = '<list>\n</list>'
+        model_xml = standard.str_json([])
         self.model_xml = model_xml
         self.model = []
       if container_xml != model_xml:
@@ -191,7 +193,9 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
     # --------------------------------------------------------------------------
     def setModel(self, newModel):
       container = self.getModelContainer()
-      container.manage_edit( title=container.title, content_type=container.content_type, filedata=newModel)
+      id = container.id()
+      zopeutil.removeObject(self,id)
+      zopeutil.addObject(self,'DTML Method',id,'SQL-Model (XML)',newModel)
 
 
     # --------------------------------------------------------------------------
@@ -835,14 +839,14 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
                       uctype = cl[1].upper()
                       if not ucid in ['CHECK', 'FOREIGN', 'PRIMARY'] and not uctype.startswith('KEY') and not uctype.startswith('(') and not ucid.startswith('\''):
                         col = {}
-                        col["id"] = cid
-                        col["description"] = ' '.join(cl[1:])
+                        col["id"] = standard.pybytes(cid)
+                        col["description"] = standard.pybytes(' '.join(cl[1:]))
                         columnBrwsrs.append(col)
               else:
                 for columnBrwsr in tableBrwsr.tpValues():
                   col = {}
-                  col["id"] = columnBrwsr.tpId()
-                  col["description"] = getattr(columnBrwsr, 'Description', getattr(columnBrwsr, 'description', None))().upper()
+                  col["id"] = standard.pybytes(columnBrwsr.tpId())
+                  col["description"] = standard.pybytes(getattr(columnBrwsr, 'Description', getattr(columnBrwsr, 'description', None))().upper())
                   columnBrwsrs.append(col)
               for columnBrwsr in columnBrwsrs:
                 colId = columnBrwsr["id"]
@@ -1068,6 +1072,8 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
         qualifiedname = d.get('qualifiedname', columnname)
         op            = d['op']
         value         = d['value']
+        if op=='':
+          op = '='
         if op in [ 'NULL', 'NOT NULL']:
           sqlStatement.append('%s IS %s'%(qualifiedname, op))
         elif value != '':
@@ -1094,7 +1100,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
           requestkey = 'filter%s%i'%(filterStereotype, filterIndex)
           sessionkey = '%s_%s'%(requestkey, self.id)
           requestvalue = REQUEST.form.get(requestkey, standard.get_session_value(self,sessionkey, ''))
-          if REQUEST.get('btn', '')==self.getZMILangStr('BTN_RESET'):
+          if REQUEST.get('btn')=='BTN_RESET':
             requestvalue = ''
           REQUEST.set(requestkey, requestvalue)
           standard.set_session_value(self,sessionkey, requestvalue)
@@ -1674,7 +1680,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
       if i > 0:
         fileext = filename[ i:]
         filename = filename[ :i]
-      filename = filename + '_' + str( rowid) + fileext
+      filename = filename + '_' + standard.pystr( rowid) + fileext
       # Update
       oldfilename = 'None'
       if rowid is not None:
@@ -1769,15 +1775,15 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
       el_data = REQUEST.get('el_data', '')
       target = 'manage_properties'
       
-      if REQUEST.get('btn', '') not in [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]:
+      if REQUEST.get('btn', '') not in [ 'BTN_CANCEL', 'BTN_BACK']:
         self.connection_id = REQUEST['connection_id']
         self.charset = REQUEST['charset']
         self.setModel(REQUEST['model'])
         message = self.getZMILangStr('MSG_CHANGED')
       
       # Return with message.
-      message = urllib.parse.quote(message)
-      el_data = urllib.parse.quote(el_data)
+      message = standard.url_quote(message)
+      el_data = standard.url_quote(el_data)
       return RESPONSE.redirect('%s?lang=%s&manage_tabs_message=%s&el_data=%s'%(target, lang, message, el_data))
 
 
@@ -1851,7 +1857,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
       
       # Change.
       # -------
-      if btn == self.getZMILangStr('BTN_SAVE'):
+      if btn == 'BTN_SAVE':
         model = self.getModel()
         entities = [x for x in model if x['id'].upper()==id.upper()]
         if entities:
@@ -1972,7 +1978,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
       
       # Delete.
       # -------
-      elif btn == 'delete':
+      elif btn == 'BTN_DELETE':
         attr_id = REQUEST['attr_id'].strip()
         model = self.getModel()
         entities = [x for x in model if x['id'].upper()==id.upper()]
@@ -1985,7 +1991,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
       
       # Import.
       # -------
-      elif btn == self.getZMILangStr('BTN_IMPORT'):
+      elif btn == 'BTN_IMPORT':
         f = REQUEST['file']
         filename = f.filename
         self.setModel(f)
@@ -1993,7 +1999,7 @@ class ZMSSqlDb(zmscustom.ZMSCustom):
       
       # Insert.
       # -------
-      elif btn == self.getZMILangStr('BTN_INSERT'):
+      elif btn == 'BTN_INSERT':
         attr_id = REQUEST['attr_id'].strip()
         model = self.getModel()
         newValue = {}

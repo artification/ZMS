@@ -17,15 +17,15 @@
 ################################################################################
 
 # Imports.
+from __future__ import absolute_import
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 import base64
 import copy
 import re
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import standard
-from . import _confmanager
-from . import _objattrs
+from Products.zms import _confmanager
+from Products.zms import _objattrs
+from Products.zms import standard
 
 # ------------------------------------------------------------------------------
 #  isMailLink:
@@ -53,6 +53,8 @@ def getInternalLinkDict(self, url):
   d = {}
   # Params.
   ref_params = ''
+  if url.startswith('{$__') and url.endswith('__}'):
+    url = '{$%s}'%url[len('{$__'):-len('__}')]
   if url.find(';') > 0:
     ref_params = url[url.find(';'):-1]
     url = '{$%s}'%url[2:url.find(';')]
@@ -94,7 +96,7 @@ def getInlineRefs(text):
   l = []
   p = '<a(.*?)>(.*?)<\\/a>'
   r = re.compile(p)
-  for f in r.findall(str(text)):
+  for f in r.findall(standard.pystr(text)):
     d = dict(re.findall('\\s(.*?)="(.*?)"', f[0]))
     if 'data-id' in d:
       l.append(d['data-id'])
@@ -128,17 +130,16 @@ class ZReferableItem(object):
   #  ZReferableItem.getRelativeUrl:
   # ----------------------------------------------------------------------------
   def getRelativeUrl(self, path, url):
-    import urllib.parse
     import posixpath
-    u_dest = urllib.parse.urlsplit(url)
-    u_src = urllib.parse.urlsplit(path)
-    _uc1 = urllib.parse.urlunsplit(u_dest[:2]+tuple('' for i in range(3)))
-    _uc2 = urllib.parse.urlunsplit(u_src[:2]+tuple('' for i in range(3)))
+    u_dest = standard.urllib_parse.urlsplit(url)
+    u_src = standard.urllib_parse.urlsplit(path)
+    _uc1 = standard.urllib_parse.urlunsplit(u_dest[:2]+tuple('' for i in range(3)))
+    _uc2 = standard.urllib_parse.urlunsplit(u_src[:2]+tuple('' for i in range(3)))
     if _uc1 != _uc2:
         ## This is a different domain
         return url
     _relpath = posixpath.relpath(u_dest.path, posixpath.dirname(u_src.path))
-    return './%s'%urllib.parse.urlunsplit(('', '', _relpath, u_dest.query, u_dest.fragment))
+    return './%s'%standard.urllib_parse.urlunsplit(('', '', _relpath, u_dest.query, u_dest.fragment))
 
   # ----------------------------------------------------------------------------
   #  ZReferableItem.getRefObjPath:
@@ -261,13 +262,13 @@ class ZReferableItem(object):
             v = getattr(obj_vers, '%s%s'%(key, lang_suffix), None)
             if v is not None:
               if datatype in ['richtext', 'string', 'text']:
-                for iv in getInlineRefs(str(v)):
-                  ref_ob = self.getLinkObj(iv)
+                for iv in getInlineRefs(v):
+                  ref_ob = self.getLinkObj(str(iv))
                   if ref_ob is not None:
                     ref = self.getRefObjPath(ref_ob)
                     d[ref] = 1
               elif datatype in ['url']:
-                ref_ob = self.getLinkObj(v)
+                ref_ob = self.getLinkObj(str(v))
                 if ref_ob is not None:
                   ref = self.getRefObjPath(ref_ob)
                   d[ref] = 1
@@ -331,7 +332,7 @@ class ZReferableItem(object):
       p = pq[0]
       q = pq[1]
       r = re.compile(p)
-      for f in r.findall(str(text)):
+      for f in r.findall(standard.pybytes(text)):
         d = dict(re.findall('\\s(.*?)="(.*?)"', f))
         if 'data-id' in d:
           old = p.replace('(.*?)', f)
@@ -365,7 +366,7 @@ class ZReferableItem(object):
   #  Resolves internal/external links and returns Object.
   # ----------------------------------------------------------------------------
   def getLinkObj(self, url, REQUEST=None):
-    ob = None
+    ob = None 
     if isInternalLink(url):
       def default(*args, **kwargs):
         self = args[0]
@@ -442,7 +443,7 @@ class ZReferableItem(object):
   # ----------------------------------------------------------------------------
   def tal_anchor(self, href, target='', attrs={}, content=''):
     filtered_attrs_keys = [x for x in attrs if x]
-    str_attrs = ' '.join(['%s=\042%s\042'%(str(x),str(attrs[x])) for x in filtered_attrs_keys])
+    str_attrs = ' '.join(['%s=\042%s\042'%(standard.pystr(x),str(attrs[x])) for x in filtered_attrs_keys])
     return '<a href="%s" %s %s>%s</a>'%(href, ['', ' target="%s"'%target][int(len(target)>0)], str_attrs, content)
 
 ################################################################################

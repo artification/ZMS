@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" tal:define="
 	standard modules/Products.zms/standard;
-	pilutil modules/Products.zms/pilutil">
+	pilutil modules/Products.zms/pilutil;
+	filter_manager python:here.getFilterManager();">
 <tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>
 <body tal:attributes="class python:here.zmi_body_class(id='customize config')">
 <tal:block tal:content="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</tal:block>
@@ -23,28 +24,24 @@
 			<form class="form-horizontal card" title="Manager" name="ManagerForm" action="manage_customizeSystem" method="post" enctype="multipart/form-data">
 				<input type="hidden" name="lang" tal:attributes="value python:request['lang']" />
 				<input type="hidden" name="key" value="Manager" />
-				<tal:block tal:define="global meta_types python:[x for x in here.filtered_meta_types() if not x['product']=='zms' and x['name'].startswith('ZMS')] \
-					+[{'name':x,'action':x,} for x in ['Sequence','ZMSLog','ZMSZCatalogAdapter' \
-						,'ZMSFormatProvider','ZMSFormatProviderAcquired' \
-						,'ZMSMetacmdProvider','ZMSMetacmdProviderAcquired' \
-						,'ZMSWorkflowProvider','ZMSWorkflowProviderAcquired' \
-						,'ZMSRepositoryManager']]">
-				<div class="col-12 form-group">
+				<tal:block tal:define="global meta_types python:[x for x in here.filtered_meta_types() if not x['product']=='zms' and x['name'].startswith('ZMS')] + [{'name':x,'action':x,} for x in ['Sequence', 'ZMSLog', 'ZMSZCatalogAdapter', 'ZMSFilterManager', 'ZMSFormatProvider', 'ZMSFormatProviderAcquired', 'ZMSMetacmdProvider', 'ZMSMetacmdProviderAcquired', 'ZMSWorkflowProvider', 'ZMSWorkflowProviderAcquired', 'ZMSRepositoryManager']]">
+				<div class="col-12 form-group mb-4">
 					<label class="d-none" for="meta_type">ZMS base-components</label>
 					<div class="btn-group">
-						<select class="form-control form-control-sm" style="display:inline-block;width:auto;" id="meta_type" name="meta_type"
-							title="Add New ZMS base-components"
+						<select class="form-control form-control" id="meta_type" name="meta_type" title="Add New ZMS base-components"
 							onchange="if($(this).val().indexOf('manage_add')==0){self.location.href=$(this).val();}else if ($(this).val()!=''){document.getElementById('addMetaTypeBtn').click();}">
 							<option value="">Select type to add...</option>
 							<tal:block tal:repeat="meta_type meta_types"
-								><option tal:condition="python:len(here.objectValues(meta_type['name']))==0"	tal:attributes="value meta_type/action" tal:content="python:here.getZMILangStr(meta_type['name'])">name</option>
+								><option tal:condition="python:len(here.objectValues(meta_type['name']))==0"
+									tal:attributes="value meta_type/action" 
+									tal:content="python:here.getZMILangStr(meta_type['name'])">name</option>
 							</tal:block>
 						</select>
-						<button style="display:inline-block;" name="btn" type="submit" class="btn btn-secondary btn-sm" value="Add">Add</button>
+						<button name="btn" type="submit" class="btn btn-secondary btn" value="Add">Add</button>
 					</div>
 				</div><!-- .form-group -->
 				<tal:block tal:repeat="si python:here.objectValues(['MediaDb']+[x['name'] for x in meta_types])">
-				<div class="form-group col-sm-12">
+				<div class="form-group col-12 text-truncate">
 					<label>
 						<span class="btn btn-secondary">
 							<i tal:on-error="structure string:<i class='fas fa-ban' title='Icon Error'></i>"
@@ -134,16 +131,7 @@
 		<tal:block tal:define="global
 			conf python:here.getConfProperties();
 			conf_inherited python:here.getConfProperties(inherited=True);
-			conf_keys python:[x for x in conf_inherited if \
-				not x.startswith('ZMS.workflow') and \
-				not x.startswith('ZMS.version') and \
-				not x=='ZMS.log' and \
-				not x.startswith('ZMS.security') and \
-				not x.startswith('zms.misc') and \
-				not x.startswith('ZMS.filter') and \
-				not x.startswith('ZMS.custom') and \
-				not x.startswith('Portal.') \
-				];
+			conf_keys python:[x for x in conf_inherited if not x.startswith('ZMS.workflow') and not x.startswith('ZMS.version') and not x=='ZMS.log' and not x.startswith('ZMS.security') and not x.startswith('zms.misc') and not x.startswith('ZMS.filter') and not x.startswith('ZMS.custom') and not x.startswith('Portal.') ];
 				dummy0 python:conf_keys.sort();
 				res python:here.getConfPropertiesDefaults();
 				res_keys python:[x['key'] for x in here.sort_list(res,'title','asc')]">
@@ -408,14 +396,14 @@ $(function() {
 	}); 
 	$("button[class*='btn btn-primary']").click(function() {
 		if ($(this).text()!='Change') {
-			$(this).html("Installing..."+" <"+"i class='icon-spin icon-spinner'"+"><"+"/i"+">");
+			$(this).html("Installing..."+" <"+"i class='icon-spin icon-spinner fas fa-spinner fa-spin'"+"><"+"/i"+">");
 		}
 	}); 
 	$("i[class^='ImportExample icon-upload']").click(function() {
 			var btn = $(this);
 			var res = confirm("Import Example?\n\nHINT:\nYou can configure the parameter {ZMS.Examples} at ZMS > Configuration > System > Miscellaneous with a link to the desired import destination (default is the instance's root element).");
 			if (res == true) {
-				btn.toggleClass("icon-upload icon-spin icon-spinner");
+				btn.toggleClass("icon-upload icon-spin icon-spinner fas fa-spinner fa-spin");
 				btn.unbind("click");
 				btn.unbind("mouseenter");
 				btn.unbind("mouseleave");
@@ -425,13 +413,13 @@ $(function() {
 					data : {key:'InstalledProducts', btn:'ImportExample', zmsext:btn.data('zmsext'), lang:getZMILang()}
 				}).done(function(data) {
 						if (data == "True") {
-							btn.toggleClass("icon-ok-sign icon-spin icon-spinner");
+							btn.toggleClass("icon-ok-sign icon-spin icon-spinner fas fa-spinner fa-spin");
 							btn.css("color", "#5cb85c");
 							btn.parent().attr("href", btn.parent().data("link"));
 							btn.parent().attr("title", "Go to Example...");
 						}
 						else {
-							btn.toggleClass("icon-exclamation-circle icon-spin icon-spinner");
+							btn.toggleClass("icon-exclamation-circle icon-spin icon-spinner fas fa-spinner fa-spin");
 							btn.css("color", "#d9534f");
 							btn.parent().attr("title", "An Error occured!");
 						}
@@ -442,7 +430,7 @@ $(function() {
 			var btn = $(this);
 			var res = confirm("Install Theme?");
 			if (res == true) {
-				btn.toggleClass("icon-upload icon-spin icon-spinner");
+				btn.toggleClass("icon-upload icon-spin icon-spinner fas fa-spinner fa-spin");
 				btn.unbind("click");
 				btn.unbind("mouseenter");
 				btn.unbind("mouseleave");
@@ -452,13 +440,13 @@ $(function() {
 					data : {key:'InstalledProducts', btn:'InstallTheme', zmsext:btn.data('zmsext'), lang:getZMILang()}
 				}).done(function(data) {
 						if (data == "True") {
-							btn.toggleClass("icon-ok-sign icon-spin icon-spinner");
+							btn.toggleClass("icon-ok-sign icon-spin icon-spinner fas fa-spinner fa-spin");
 							btn.css("color", "#5cb85c");
 							btn.parent().attr("href", btn.parent().data("link"));
 							btn.parent().attr("title", "Go to Theme...");
 						}
 						else {
-							btn.toggleClass("icon-exclamation-circle icon-spin icon-spinner");
+							btn.toggleClass("icon-exclamation-circle icon-spin icon-spinner fas fa-spinner fa-spin");
 							btn.css("color", "#d9534f");
 							btn.parent().attr("title", "An Error occured!");
 						}
@@ -483,7 +471,7 @@ $(function() {
 				$('#BTN_Restart').prop("disabled", true);
 				var spinner = "";
 				if (data!='No daemon.') {
-					spinner = " <"+"i class='icon-spin icon-spinner'"+"><"+"/i"+">";
+					spinner = " <"+"i class='icon-spin icon-spinner fas fa-spinner fa-spin'"+"><"+"/i"+">";
 				}
 				$('#BTN_Restart').html(data + spinner)
 			});
@@ -492,7 +480,6 @@ $(function() {
 </script>
 </tal:block>
 
-<div style="clear:both;">&nbsp;</div>
 </div><!-- #zmi-tab -->
 <tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
 </body>

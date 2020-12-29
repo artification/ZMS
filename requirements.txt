@@ -1,9 +1,7 @@
 # ZMS Dependencies
-wheel
-Paste
 docutils
 configparser
-Zope
+Zope[wsgi]
 Products.GenericSetup
 Products.MailHost
 Products.ExternalMethod
@@ -13,4 +11,10 @@ Products.SiteErrorLog
 Products.StandardCacheManagers
 Products.Sessions
 Products.TemporaryFolder
-tempstorage
+
+zope.app.publication
+zope.authentication
+zope.untrustedpython
+zope.error
+ZopeUndo
+Pillow

@@ -26,12 +26,12 @@ Scripts.  It can be accessed from Python with the statement
 "import Products.zms.standard"
 """
 # Imports.
+from __future__ import absolute_import
 from AccessControl.SecurityInfo import ModuleSecurityInfo
 from AccessControl import AuthEncoding
 from App.Common import package_home
 from App.config import getConfiguration
 from DateTime.DateTime import DateTime
-from io import BytesIO
 from zope.event import notify
 from zope.lifecycleevent import ObjectModifiedEvent
 import base64
@@ -47,16 +47,105 @@ import re
 import sys
 import time
 import traceback
-import urllib.request, urllib.parse, urllib.error
 import zExceptions
 import six
-from xml.sax import saxutils
+
+from six.moves.urllib import parse as urllib_parse 
+from six.moves.urllib.parse import quote as urllib_quote
+from six.moves.urllib.parse import quote_plus as urllib_quote_plus
+from six.moves.urllib.parse import unquote as urllib_unquote
+from six.moves.urllib.parse import urlparse as urllib_urlparse
+from six import BytesIO as PyBytesIO
+
+# if six.PY3:
+#   import urllib.parse                 as urllib_parse
+#   from urllib.parse import quote_plus as urllib_quote_plus
+#   from urllib.parse import unquote    as urllib_unquote
+#   from urllib.parse import urlparse   as urllib_urlparse
+# else:
+#   import urlparse                     as urllib_parse
+#   from urllib import quote_plus       as urllib_quote_plus
+#   from urllib import unquote          as urllib_unquote
+#   from urlparse import urlparse       as urllib_urlparse
+
 # Product Imports.
-from . import _globals
-from . import _fileutil
-from . import _mimetypes
+from Products.zms import _globals
+from Products.zms import _fileutil
+from Products.zms import _mimetypes
 
 security = ModuleSecurityInfo('Products.zms.standard')
+
+security.declarePublic('is_str')
+security.declarePublic('is_bytes')
+security.declarePublic('pystr')
+security.declarePublic('pybytes')
+if six.PY2:
+  def is_str(v):
+    return isinstance(v,unicode)
+  def is_bytes(v):
+    return isinstance(v,str) or isinstance(v,bytes)
+  def pystr(object, encoding='utf-8', errors='strict'):
+    if not is_str(object):
+      if isinstance(object,str):
+        object = unicode(object,encoding,errors)
+      else:
+        object = unicode(object)
+    return object
+  def pybytes(object, encoding='utf-8', errors='strict'):
+    if is_str(object):
+      object = object.encode(encoding,errors)
+    return object
+  def pyopen(name, mode, buffering=-1, encoding=None):
+    return open(name, mode, buffering)
+  from cgi import escape as html_escape
+if six.PY3:
+  def is_str(v):
+    return isinstance(v,str)
+  def is_bytes(v):
+    return isinstance(v,bytes)
+  pystr = str
+  pybytes = bytes
+  pyopen = open
+  from html import escape as html_escape
+
+# added in six-1.12.0
+def six_ensure_binary(s, encoding='utf-8', errors='strict'):
+    """Coerce **s** to six.binary_type.
+    For Python 2:
+      - `unicode` -> encoded to `str`
+      - `str` -> `str`
+    For Python 3:
+      - `str` -> encoded to `bytes`
+      - `bytes` -> `bytes`
+    """
+    if isinstance(s, six.text_type):
+        return s.encode(encoding, errors)
+    elif isinstance(s, six.binary_type):
+        return s
+    else:
+        raise TypeError("not expecting type '%s'" % type(s))
+
+# added in six-1.12.0
+def six_ensure_str(s, encoding='utf-8', errors='strict'):
+    """Coerce *s* to `str`.
+    For Python 2:
+      - `unicode` -> encoded to `str`
+      - `str` -> `str`
+    For Python 3:
+      - `str` -> `str`
+      - `bytes` -> decoded to `str`
+    """
+    if not isinstance(s, (six.text_type, six.binary_type)):
+        raise TypeError("not expecting type '%s'" % type(s))
+    if six.PY2 and isinstance(s, six.text_type):
+        s = s.encode(encoding, errors)
+    elif six.PY3 and isinstance(s, six.binary_type):
+        s = s.decode(encoding, errors)
+    return s
+
+
+def url_quote(s):
+  return urllib_quote(s)
 
 """
 @group PIL (Python Imaging Library): pil_img_*
@@ -78,7 +167,7 @@ def initZMS(self, id, titlealt, title, lang, manage_lang, REQUEST):
   homeElmnt = [x for x in self.objectValues() if x.id == homeElmnt.id][0]
   
   ##### Add ZMS ####
-  from . import zms
+  from Products.zms import zms
   zms.initZMS(homeElmnt, 'content', titlealt, title, lang, manage_lang, REQUEST)
   zms.initContent(homeElmnt.content, 'content.default.zip', REQUEST)
 
@@ -115,11 +204,15 @@ def getINSTANCE_HOME():
 
 security.declarePublic('zmi_paths')
 def zmi_paths(context):
-	from zmi.styles.subscriber import css_paths, js_paths
 	kw = {}
-	# remove zmi base css/js
-	kw["css_paths"] = css_paths(context)[:-1]
-	kw["js_paths"] = js_paths(context)[:-2]
+	try:
+		from zmi.styles.subscriber import css_paths, js_paths
+		# remove zmi base css/js
+		kw["css_paths"] = css_paths(context)[:-1]
+		kw["js_paths"] = js_paths(context)[:-2]
+	except:
+		kw["css_paths"] = ("/++resource++zmi/bootstrap-4.1.1/bootstrap.min.css","/++resource++zmi/fontawesome-free-5.8.1/css/all.css",)
+		kw["js_paths"] = ("/++resource++zmi/jquery-3.2.1.min.js","/++resource++zmi/bootstrap-4.1.1/bootstrap.bundle.min.js",)
 	return kw
 
 
@@ -176,12 +269,12 @@ def umlaut_quote(s, mapping={}):
   @return: Quoted string
   @rtype: C{str}
   """
-  if isinstance(s, bytes):
-    s = s.decode()
+  if is_bytes(s):
+    s = pystr(s)
   for x in _globals.umlaut_map:
     mapping[x] = _globals.umlaut_map[x]
   for key in mapping:
-    s = s.replace(key, mapping[key])
+    s = s.replace(key, pystr(mapping[key]))
   return s
 
 
@@ -214,11 +307,14 @@ def url_append_params(url, dict, sep='&amp;'):
     value = dict[key]
     if isinstance(value, list):
       for item in value:
-        qi = key + ':list=' + urllib.parse.quote(str(item))
+        qi = key + ':list=' + url_quote(pystr(item))
         url += qs + qi
         qs = sep
     else:
-      qi = key + '=' + urllib.parse.quote(str(value))
+      try:
+        qi = key + '=' + url_quote(str(value))
+      except:
+        qi = key + '=' + value.encode('utf-8','replace')
       if url.find( '?' + qi) < 0 and url.find( '&' + qi) < 0 and url.find( '&amp;' + qi) < 0:
         url += qs + qi
       qs = sep
@@ -252,18 +348,18 @@ def url_inherit_params(url, REQUEST, exclude=[], sep='&amp;'):
           else:
             url += sep
           if isinstance(v, int):
-            url += urllib.parse.quote(key+':int') + '=' + urllib.parse.quote(str(v))
+            url += url_quote(key+':int') + '=' + url_quote(str(v))
           elif isinstance(v, float):
-            url += urllib.parse.quote(key+':float') + '=' + urllib.parse.quote(str(v))
+            url += url_quote(key+':float') + '=' + url_quote(str(v))
           elif isinstance(v, list):
             c = 0
             for i in v:
               if c > 0:
                 url += sep
-              url += urllib.parse.quote(key+':list') + '=' + urllib.parse.quote(str(i))
+              url += url_quote(key+':list') + '=' + url_quote(str(i))
               c = c + 1
           else:
-            url += key + '=' + urllib.parse.quote(str(v))
+            url += key + '=' + url_quote(str(v))
   return url+anchor
 
 
@@ -283,9 +379,9 @@ def string_maxlen(s, maxlen=20, etc='...', encoding=None):
   @rtype: C{str}
   """
   if encoding is not None:
-    s = str( s, encoding)
+    s = pystr( s, encoding)
   else:
-    s = str(s)
+    s = pystr(s)
   # remove all tags.
   s = re.sub( '<!--(.*?)-->', '', s)
   s = re.sub( '<script((.|\n|\r|\t)*?)>((.|\n|\r|\t)*?)</script>', '', s)
@@ -314,7 +410,7 @@ def url_encode(url):
   @return: Encoded string
   @rtype: C{str}
   """
-  return ''.join([urllib.parse.quote_plus(x) for x in url])
+  return ''.join([urllib_quote_plus(x) for x in url])
 
 
 security.declarePublic('guess_content_type')
@@ -338,8 +434,8 @@ html_quote:
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 def html_quote(v, name='(Unknown name)', md={}):
   if not isinstance(v,str):
-    v = str(v)
-  return saxutils.escape(v)
+    v = pystr(v)
+  return html_escape(v, 1)
 
 
 def bin2hex(m):
@@ -351,7 +447,7 @@ def bin2hex(m):
   @rtype: C{bytes}
   """
   import binascii
-  return binascii.hexlify(m)
+  return six_ensure_str(binascii.hexlify(m))
 
 
 def hex2bin(m):
@@ -464,25 +560,68 @@ def getMimeTypeIconSrc(mt):
   return'/++resource++zms_/img/%s'%_mimetypes.dctMimeType.get( mt, _mimetypes.content_unknown)
 
 
+security.declarePublic('getFileTypeIconCSS')
+def getFileTypeIconCSS(fn):
+  """
+  Returns the FontAwesome CSS class of an icon representing the specified file type.
+  @param fn: filename with extension (e.g. picture.gif).
+  @type mt: C{str}
+  @rtype: C{str}
+  """
+  fontAwesomeIconClasses = {
+    # Media
+    'png': 'far fa-file-image',
+    'jpg': 'far fa-file-image',
+    'jpeg': 'far fa-file-image',
+    'gif': 'far fa-file-image',
+    'dcm': 'fas fa-file-medical',
+    'mp3': 'far fa-file-audio',
+    'mpg': 'far fa-file-video',
+    'mpeg': 'far fa-file-video',
+    'mp4': 'far fa-file-video',
+    # Documents
+    'pdf': 'far fa-file-pdf',
+    'pdf': 'far fa-file-pdf',
+    'pages': 'far fa-file-word',
+    'doc': 'far fa-file-word',
+    'docx': 'far fa-file-word',
+    'odt': 'far fa-file-word',
+    'xls': 'far fa-file-excel',
+    'numbers': 'far fa-file-excel',
+    'xlsx': 'far fa-file-excel',
+    'ods': 'far fa-file-excel',
+    'csv': 'fas fa-file-csv',
+    'ppt': 'far fa-file-powerpoint',
+    'pptx': 'far fa-file-powerpoint',
+    'key': 'far fa-file-powerpoint',
+    'odp': 'far fa-file-powerpoint',
+    'txt': 'far fa-file-alt',
+    'htm': 'far fa-file-code',
+    'html': 'far fa-file-code',
+    'json': 'far fa-file-code',
+    # Archives
+    'gzip': 'far fa-file-archive',
+    'zip': 'far fa-file-archive'
+  }
+  icon_class = 'far fa-file'
+  if fn != None:
+    fn_ext = fn.split('.')[-1].split('/')[-1]
+    icon_class = (fn_ext in fontAwesomeIconClasses.keys()) and fontAwesomeIconClasses[fn_ext] or icon_class
+  return icon_class
+
+
 security.declarePublic('unencode')
 def unencode( p, enc='utf-8'):
   """
   Unencodes given parameter.
   """
   if isinstance(p, dict):
-    for key in p.keys():
-      if isinstance(p[ key], str):
-        p[ key] = p[ key].encode( enc)
+    for key in p:
+      p[key] = unencode(p[key],enc)
   elif isinstance(p, list):
-    l = []
-    for i in p:
-      if isinstance(i, str):
-        l.append( i.encode( enc))
-      else:
-        l.append( i)
-    p = l
-  elif isinstance(p, str):
-    p = p.encode( enc)
+    p = [unencode(x,enc) for x in p]
+  elif six.PY2 and is_str(p):
+    p = pybytes(p,enc)
   return p
 
 
@@ -514,7 +653,7 @@ def id_quote(s, mapping={
   """
   s = umlaut_quote(s, mapping)
   valid = [ord(x[0]) for x in mapping.values()] + [ord('_')] + list(range(ord('0'), ord('9')+1)) + list(range(ord('A'), ord('Z')+1)) + list(range(ord('a'), ord('z')+1))
-  s = [x for x in s if type(x) is str and len(x) == 1 and ord(x) in valid]
+  s = [x for x in s if is_str(x) and len(x) == 1 and ord(x) in valid]
   while len(s) > 0 and s[0] == '_':
       s = s[1:]
   s = ''.join(s).lower()
@@ -542,7 +681,7 @@ def qs_append(qs, p, v):
     qs += '?'
   else:
     qs += '&amp;'
-  qs += p + '=' + urllib.parse.quote(v)
+  qs += p + '=' + url_quote(v)
   return qs
 
 
@@ -606,7 +745,7 @@ def get_session_value(context, key, defaultValue=None):
   session = get_session(context)
   if session is not None:
     return session.get(key,defaultValue)
-  return None
+  return defaultValue
 
 
 security.declarePublic('set_session_value')
@@ -617,10 +756,10 @@ def set_session_value(context, key, value):
   session = get_session(context)
   if session is not None:
     session.set(key,value)
-    return value
-  return None
+  return value
 
 
+security.declarePublic('triggerEvent')
 def triggerEvent(context, *args, **kwargs):
   """
   Hook for trigger of custom event (if there is one)
@@ -722,8 +861,7 @@ def http_import(context, url, method='GET', auth=None, parse_qs=0, timeout=10, h
   @rtype: C{str}
   """
   # Parse URL.
-  import urllib.parse
-  u = urllib.parse.urlparse(url)
+  u = urllib_urlparse(url)
   writeLog( context, "[http_import.%s]: %s"%(method, str(u)))
   scheme = u[0]
   netloc = u[1]
@@ -745,17 +883,17 @@ def http_import(context, url, method='GET', auth=None, parse_qs=0, timeout=10, h
       netloc = proxy
 
   # Open HTTP connection.
-  import http.client
+  from six.moves import http_client
   writeLog( context, "[http_import.%s]: %sConnection(%s) -> %s"%(method, scheme, netloc, path))
   if scheme == 'http':
-    conn = http.client.HTTPConnection(netloc, timeout=timeout)
+    conn = http_client.HTTPConnection(netloc, timeout=timeout)
   else:
-    conn = http.client.HTTPSConnection(netloc, timeout=timeout)
+    conn = http_client.HTTPSConnection(netloc, timeout=timeout)
 
   # Set request-headers.
   if auth is not None:
     userpass = auth['username']+':'+auth['password']
-    userpass = base64.encodestring(urllib.parse.unquote(userpass)).strip()
+    userpass = base64.encodestring(urllib_unquote(userpass)).strip()
     headers['Authorization'] =  'Basic '+userpass
   if method == 'GET' and query:
     path += '?' + query
@@ -1106,6 +1244,28 @@ def daysBetween(t0, t1):
   d = 24.0*60.0*60.0
   return int((t1-t0)//d)
 
+
+security.declarePublic('todayInRange')
+def todayInRange(start, end):
+  """
+  Checks if today is in given range.
+  @param start
+  @type start C{any}
+  @param end
+  @type end C{any}
+  """
+  b = True
+  if start:
+    dt = getDateTime(start)
+    dt = DateTime(time.mktime(dt))
+    b = b and dt.isPast()
+  if end:
+    dt = getDateTime(end)
+    dt = DateTime(time.mktime(dt))
+    b = b and (dt.isFuture() or (dt.equalTo(dt.earliestTime()) and dt.latestTime().isFuture()))
+  return b
+
+
 security.declarePublic('compareDate')
 def compareDate(t0, t1):
   """
@@ -1237,13 +1397,15 @@ def operator_getitem(a, b, c=None, ignorecase=True):
   @type c: C{any}
   @rtype: C{any}
   """
-  if ignorecase and _globals.is_str_type(b):
+  if ignorecase and is_str(b):
+    b = pybytes(b)
+  if ignorecase and is_bytes(b):
     flags = re.IGNORECASE
     pattern = '^%s$'%b
-    for key in a.keys():
+    for key in a:
       if re.search(pattern, key, flags) is not None:
         return operator.getitem(a, key)
-  if b in a.keys():
+  if b in a:
     return operator.getitem(a, b)
   return c
 
@@ -1542,7 +1704,7 @@ def is_equal(x, y):
         return True
     elif type(x) is dict:
       if len(x) == len(y):
-        for k in x.keys():
+        for k in x:
           if not k in x or not k in y or not is_equal(x.get(k),y.get(k)):
             return False
         return True
@@ -1576,18 +1738,11 @@ def str_json(i, encoding='ascii', errors='xmlcharrefreplace', formatted=False, l
   elif type(i) is int or type(i) is float or type(i) is bool:
     return json.dumps(i)
   elif i is not None:
-    if type(i) is str:
-      if not (i.strip().startswith('<') and i.strip().endswith('>')):
-        i = saxutils.escape(i).encode(encoding, errors)
-      else:
-        i = i.encode(encoding, errors)
-    else:
-      i = i.decode(encoding,errors) # str(i)
     if allow_booleans and i in ['true','false']:
       return i
     else:
-      if type(i) is not str:
-        i = i.decode(encoding,errors) # str(i)
+      if not is_str(i):
+        i = pystr(i)
     return '"%s"'%(i.replace('\\','\\\\').replace('"','\\"').replace('\n','\\n').replace('\r','\\r'))
   return '""'
 
@@ -1786,7 +1941,7 @@ def getXmlHeader(encoding='utf-8'):
   @type encoding: C{str}
   @rtype: C{str}
   """
-  from . import _xmllib
+  from Products.zms import _xmllib
   return _xmllib.xml_header(encoding)
 
 
@@ -1804,7 +1959,7 @@ def toXmlString(context, v, xhtml=False, encoding='utf-8'):
   @type encoding
   @rtype: C{string}
   """
-  from . import _xmllib
+  from Products.zms import _xmllib
   return _xmllib.toXml(context, v, xhtml=xhtml, encoding=encoding)
 
 
@@ -1817,12 +1972,12 @@ def parseXmlString(xml):
   @return: C{list} or C{dict}
   @rtype: C{any}
   """
-  from . import _xmllib
+  from Products.zms import _xmllib
   builder = _xmllib.XmlAttrBuilder()
-  if isinstance(xml, str):
-    xml = xml.encode()
-  if isinstance(xml, bytes):
-    xml = BytesIO(xml)
+  if is_str(xml):
+    xml = pybytes(xml,'utf-8')
+  if is_bytes(xml):
+    xml = PyBytesIO(xml)
   v = builder.parse(xml)
   return v
 
@@ -1842,7 +1997,7 @@ def processData(context, processId, data, trans=None):
   @return: the transformed data
   @rtype: C{str}
   """
-  from . import _filtermanager
+  from Products.zms import _filtermanager
   return _filtermanager.processData(context, processId, data, trans)
 
 
@@ -2114,7 +2269,7 @@ def extutil():
   """
   Returns util to handle zms3.extensions
   """
-  from . import _extutil
+  from Products.zms import _extutil
   return _extutil.ZMSExtensions()
 
 
@@ -2154,13 +2309,13 @@ def getTempFile( context, id):
   temp_file = getattr(temp_folder,id)
   data = temp_file.data
   b = data
-  if isinstance(data, str):
-    b = data.encode()
-  elif not isinstance(data, bytes):
-    b = b''
+  if is_str(data):
+    b = pybytes(data)
+  elif not is_bytes(data):
+    b = pybytes(b'')
     while data is not None:
        b += data.data
-       data=data.next  
+       data=data.next
   return b
   
 

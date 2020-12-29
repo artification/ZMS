@@ -109,9 +109,6 @@
 										<td class="p-0">
 
 											<table class="table table-sm" id="meta_types">
-												<colgroup>
-													<col width="40"/>
-												</colgroup>
 												<tbody>
 													<tal:block tal:repeat="metaObjPackage python:here.sort_list(metaObjPackages+metaObjPackages2)">
 														<tal:block tal:condition="python:metaObjPackage in metaObjPackages">
@@ -142,7 +139,7 @@
 																	<input type="checkbox" name="ids:list" tal:attributes="value metaObj/id;
 																			data-attrs python:','.join(
 																				['%s(%s)'%(xx['id'],xx['type']) for xx in
-																					[here.getMetaobjAttr(metaObj['id'],x['id']) for x in metaObj['attrs'] if x['id'] not in ['icon','icon_clazz','levelnfc'] and x['type'] not in ['*','image','file','delimiter','hint','interface']]]);
+																					[here.getMetaobjAttr(metaObj['id'],x['id']) for x in metaObj['attrs'] if x['type'] not in ['*','constant','delimiter','file','hint','image','interface']]]);
 																			checked python:['','checked'][int('catalog_index' in [x['id'] for x in metaObj['attrs']])];
 																			disabled python:['','disabled'][int('catalog_index' in [x['id'] for x in metaObj['attrs']])]" onclick="toggleMetaobj()"/>
 																</td>
@@ -160,11 +157,6 @@
 										</td>
 										<td class="p-0 border-left">
 											<table class="table table-sm" id="indexes">
-												<colgroup>
-													<col width="10%"/>
-													<col width="60%"/>
-													<col width="30%"/>
-												</colgroup>
 											</table>
 										</td>
 									</tr>
@@ -235,7 +227,6 @@
 </form>
 
 </tal:block>
-<div style="clear:both;">&nbsp;</div>
 </div><!-- #zmi-tab -->
 
 <script>
@@ -315,7 +306,7 @@ function zmiReindexCatalog() {
 				var langs = $("#langs").val().join(';');
 				var data = {uid:uid,langs:langs};
 				var $a = $input.next("a");
-				$a.after('<'+'span class="response ml-2 p-1 zmi-code" style="white-space:wrap"> '+$ZMI.icon('icon-spinner')+' <'+'/span>');
+				$a.after(`<span class="response alert zmi-code"><i class="fas fa-spinner fa-spin"></i></span>`);
 				$.ajax({
 					url:"manage_reindex",
 					data:data,

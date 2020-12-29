@@ -24,14 +24,13 @@ from zope.interface import implementer
 import copy
 import sys
 import time
-import urllib.request, urllib.parse, urllib.error
 import zExceptions
 # Product Imports.
-from . import standard
-from . import IZMSCatalogConnector
-from . import ZMSZCatalogAdapter
-from . import ZMSItem
-from . import _globals
+from Products.zms import standard
+from Products.zms import IZMSCatalogConnector
+from Products.zms import ZMSZCatalogAdapter
+from Products.zms import ZMSItem
+from Products.zms import _globals
 
 
 extra_column_ids = ['loc', 'index_html', 'custom']
@@ -298,7 +297,7 @@ class ZMSZCatalogConnector(
         xmlr += '<str name="msg">%s</str>'%standard.html_quote(msg)
         xmlr += '<int name="code">%i</int>'%status
         xmlr += '</lst>'
-      xml += str(xmlr)
+      xml += standard.pystr(xmlr)
       xml += '</response>'
       return xml
 
@@ -403,7 +402,7 @@ class ZMSZCatalogConnector(
           results.append((item.data_record_score_, result))
       
       # Sort search-results.
-      results.sort()
+      results = sorted( results, key=lambda x: x[0])
       results.reverse()
       
       # Append search-results.

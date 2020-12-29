@@ -12,7 +12,7 @@
 <tal:block tal:content="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</tal:block>
 <div id="zmi-tab">
 <tal:block tal:define="
-		metaObjIds python:here.getMetaobjIds(sort=True);
+		metaObjIds python:here.getMetaobjIds(sort=False);
 		metaObjs python:[here.getMetaobj(x,aq_attrs=['enabled']) for x in metaObjIds];
 		metaObjPackages python:standard.sort_list(['']+[x['id'] for x in metaObjs if x['type'] == 'ZMSPackage']);
 		metaObjPackages2 python:standard.distinct_list([x for x in [x.get('package') for x in metaObjs] if x not in metaObjPackages])">
@@ -43,7 +43,7 @@
 			</div><!-- .form-group -->
 			<div class="form-row">
 				<div class="controls save">
-					<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_INSERT')" tal:content="python:here.getZMILangStr('BTN_INSERT')">Insert</button>
+					<button type="submit" name="btn" class="btn btn-primary" value="BTN_INSERT" tal:content="python:here.getZMILangStr('BTN_INSERT')">Insert</button>
 				</div><!-- .controls.save -->
 			</div><!-- .form-group -->
 		</form>
@@ -89,7 +89,7 @@
 		</tal:block>
 	</select>
 
-	<div class="d-flex flex-row justify-content-between align-items-start">
+	<div class="d-flex flex-row justify-content-between align-items-start py-2">
 		<div class="btn-group m-2" role="group" aria-label="Object Class Selector">
 			<div class="zmi-action btn-group dropleft" tal:attributes="title python:here.getZMILangStr('CAPTION_CHOOSEOBJ')">
 				<button class="btn btn-secondary" data-toggle="dropdown"><i class="fas fa-caret-down"></i></button>
@@ -129,10 +129,10 @@
 		</div>
 		<div class="form-row m-2">
 			<div class="controls save m-0 p-0 container">
-				<button tal:condition="python:not metaObj['acquired']" type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_SAVE')" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
-				<button tal:condition="python:metaObj['acquired']" type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_COPY')" tal:content="python:here.getZMILangStr('BTN_COPY')">Copy</button>
-				<button type="submit" name="btn" class="btn btn-secondary" tal:attributes="value python:here.getZMILangStr('BTN_BACK')" tal:content="python:here.getZMILangStr('BTN_BACK')">Back</button>
-				<button type="button" name="btn" class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_EXPORT')" onclick="return zmiExportBtnClick(this)"><i class="fas fa-download"></i></button>
+				<button tal:condition="python:not metaObj['acquired']" type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+				<button tal:condition="python:metaObj['acquired']" type="submit" name="btn" class="btn btn-primary" value="BTN_COPY" tal:content="python:here.getZMILangStr('BTN_COPY')">Copy</button>
+				<button type="submit" name="btn" class="btn btn-secondary" value="BTN_BACK" tal:content="python:here.getZMILangStr('BTN_BACK')">Back</button>
+				<button type="button" name="btn" class="btn btn-secondary" value="BTN_EXPORT" tal:attributes="title python:here.getZMILangStr('BTN_EXPORT')" onclick="return zmiExportBtnClick(this)"><i class="fas fa-download"></i></button>
 			</div>
 		</div>
 	</div>
@@ -198,7 +198,7 @@
 							</select>
 							<div class="input-group-append">
 								<a class="btn btn-secondary" href="javascript:;" 
-									tal:attributes="onclick python:'javascript:zmiDeleteObjBtnClick(this,{btn:\'delete\',key:\'attr\',attr_id:\'%s\'})'%objAttrId; title python:here.getZMILangStr('BTN_DELETE')"
+									tal:attributes="onclick python:'javascript:zmiDeleteObjBtnClick(this,{btn:\'BTN_DELETE\',key:\'attr\',attr_id:\'%s\'})'%objAttrId; title python:here.getZMILangStr('BTN_DELETE')"
 									><i class="fas fa-times"></i></a>
 							</div>
 						</div>
@@ -207,22 +207,30 @@
 					<td class="meta-name" tal:condition="not:python:objAttr['type'] in ['interface']"><input type="text" tal:attributes="name python:'attr_name_%s'%objAttrId; value python:objAttr['name']; class python:['form-control form-control-sm','form-control form-control-sm zmi-element-disabled'][isMetaDictAttr]"/></td>
 
 					<tal:block tal:condition="python:objAttr['type'] in ['interface','method','py','resource','zpt']+here.valid_zopetypes">
-						<td tal:attributes="colspan python:[5,6][objAttr['type'] in ['interface']]" class="meta-code" tal:condition="python:objAttr['type'] not in ['resource','File','Folder','Image'] and objAttr.get('ob') is not None">
-							<tal:block tal:define="global readData python:zopeutil.readData(objAttr['ob'],default=objAttr.get('custom','ERROR: Not found!')); global errors python:''"></tal:block>
-							<tal:block tal:condition="python:'## Errors:' in str(readData).split('\n')">
-								<tal:block tal:define="lines python:str(readData).split('\n'); global errors python:lines[lines.index('## Errors:')+1][2:]"></tal:block>
+						<td tal:attributes="colspan python:[5,6][objAttr['type'] in ['interface']]" class="meta-code" tal:condition="python:objAttr['type'] not in ['resource','File','Folder','Image'] and objAttr.get('ob') is not None"
+							><tal:block tal:define="
+									defaultData python:objAttr.get('custom','ERROR: Object not found!');
+									objectData python:zopeutil.readData(objAttr['ob'],default=None);
+									readData python:standard.pystr([objectData,defaultData][int(objectData is None)]);
+									global errors python:['','ERROR: Object not found!'][int(objectData is None)]"
+								><tal:block tal:condition="python: readData.find('## Errors:') >= 0"
+									><tal:block tal:define="
+											lines python:[x.strip() for x in readData.split('\n')];
+											global errors python:lines[lines.index('## Errors:')+1][2:].strip()"></tal:block
+								></tal:block>
+								<input type="hidden" tal:attributes="name python:'attr_type_%s'%objAttr['id']; value python:[objAttr.get('type'),objAttr.get('meta_type')][objAttr.get('meta_type') in here.getMetadictAttrs()]" />
+								<div class="single-line zmi-code" tal:condition="python:objAttr.get('ob') is not None"
+									tal:define="zopetype python:objAttr['type'] in here.valid_zopetypes; ob python:objAttr.get('ob')">
+										<textarea class="form-control form-control-sm"
+											tal:attributes="name python:'attr_custom_%s'%objAttr['id']; 
+												title python:['%s (%s) - Double-Click for Zope-Object-Editor'%(objAttr['id'],objAttr['type']),errors][len(errors)>0];
+												class python:' '.join(['form-control','form-control-sm']+objAttr['type'].lower().split(' ')+[[],['alert-danger']][len(errors)>0]);
+												style python:'\073'.join([[],['color:#a94442','background:#fee']][len(errors)>0]);
+												data-class python:'fas fa-cogs';
+												data-dblclickhandler python:'window.open(\'%s/manage\',\'%s\')'%(ob.absolute_url(),'%s (%s)'%(objAttr['id'],objAttr['type']))"
+											tal:content="readData">ob.data</textarea>
+								</div>
 							</tal:block>
-							<input type="hidden" tal:attributes="name python:'attr_type_%s'%objAttr['id']; value python:[objAttr.get('type'),objAttr.get('meta_type')][objAttr.get('meta_type') in here.getMetadictAttrs()]"/>
-							<div class="single-line zmi-code" tal:condition="python:objAttr.get('ob') is not None"
-								tal:define="zopetype python:objAttr['type'] in here.valid_zopetypes; ob python:objAttr.get('ob')">
-									<textarea class="form-control form-control-sm"
-										tal:attributes="name python:'attr_custom_%s'%objAttr['id']; title python:['%s (%s)'%(objAttr['id'],objAttr['type']),errors][len(errors)>0];
-											class python:' '.join(['form-control','form-control-sm']+objAttr['type'].lower().split(' ')+[[],['alert-danger']][len(errors)>0]);
-											style python:'\073'.join([[],['color:#a94442','background:#fee']][len(errors)>0]);
-											data-class python:'fas fa-cogs';
-											data-dblclickhandler python:'window.open(\'%s/manage\',\'%s\')'%(ob.absolute_url(),'%s (%s)'%(objAttr['id'],objAttr['type']))"
-										tal:content="readData">ob.data</textarea>
-							</div>
 						</td>
 						<td colspan="5" class="meta-resource input-group-sm" tal:condition="python:objAttr['type'] in ['resource','File','Image']">
 							<div class="meta-resource-container">
@@ -306,8 +314,8 @@
 	</table>
 	<div class="form-row">
 		<div class="controls save">
-			<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_SAVE')" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
-			<button type="submit" name="btn" class="btn btn-secondary" tal:attributes="value python:here.getZMILangStr('BTN_BACK')" tal:content="python:here.getZMILangStr('BTN_BACK')">Back</button>
+			<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+			<button type="submit" name="btn" class="btn btn-secondary" value="BTN_BACK" tal:content="python:here.getZMILangStr('BTN_BACK')">Back</button>
 		</div><!-- .controls.save -->
 	</div><!-- .form-row -->
 
@@ -317,8 +325,7 @@
 		><tal:block tal:repeat="metaObj2 metaObjs"
 			><tal:block tal:define="objAttrs python:here.getMetaobjAttrs(metaObj2['id'])"
 				><tal:block tal:repeat="objAttr objAttrs"
-					><tal:block tal:condition="python:(objAttr['type']==metaObj['id']) or \
-							(objAttr['type']=='*' and metaObj['id'] in objAttr['keys'])">
+					><tal:block tal:condition="python:(objAttr['type']==metaObj['id']) or (objAttr['type']=='*' and metaObj['id'] in objAttr['keys'])">
 						<strong tal:condition="python:len(l)==0">Usage:</strong>
 						<tal:block tal:condition="not:python:len(l)==0">,</tal:block
 						><a target="_blank"
@@ -407,19 +414,19 @@
 		<tr>
 			<th class="meta-select">
 				<div class="btn-group">
-					<button class="btn btn-secondary" tal:attributes="title python:'%s/%s'%(here.getZMILangStr('BTN_SLCTALL'),here.getZMILangStr('BTN_SLCTNONE'))" onclick="zmiToggleSelectionButtonClick(this);return false"><i class="far fa-check-square"></i></button>
+					<button class="btn btn-secondary" tal:attributes="title python:'%s/%s'%(here.getZMILangStr('BTN_SLCTALL'),here.getZMILangStr('BTN_SLCTNONE'))" onclick="zmiToggleSelectionButtonClick(this);return false"><i class="fas fa-check-square"></i></button>
 				</div>
 			</th>
 			<th colspan="2" class="meta-toolbar">
 				<div class="btn-toolbar" role="toolbar">
 					<div class="btn-group managing">
 						<button class="btn btn-primary" tal:attributes="title python:here.getZMILangStr('BTN_INSERT')+'...'" onclick="zmiModal('#insertObj',{title:$(this).attr('title')});return false"><i class="fas fa-plus icon-plus"></i></button>
-						<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_DELETE')+'...'" onclick="zmiDeleteObjBtnClick(this,{btn:getZMILangStr('BTN_DELETE'),key:'obj'});return false"><i class="fas fa-times"></i></button>
+						<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_DELETE')+'...'" onclick="zmiDeleteObjBtnClick(this,{btn:'BTN_DELETE',key:'obj'});return false"><i class="fas fa-times"></i></button>
 					</div><!-- .btn-group -->
 					<div class="btn-group packaging">
 						<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_ACQUIRE')+'...'" onclick="$ZMI.iframe('manage_main_acquire',{lang:getZMILang()},{iframe:true,height:'600',title:$(this).attr('title')});return false" tal:condition="python:here.getPortalMaster() is not None"><i class="fas fa-share icon-share"></i></button>
 						<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_IMPORT')+'...'" onclick="$ZMI.iframe('manage_main_import',{lang:getZMILang()},{iframe:true,height:'600',title:$(this).attr('title')});return false"><i class="fas fa-upload icon-upload-alt"></i></button>
-						<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_EXPORT')+'...'" onclick="zmiExportBtnClick(this);return false"><i class="fas fa-download icon-download-alt"></i></button>
+						<button class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_EXPORT')+'...'" onclick="return zmiExportBtnClick(this);"><i class="fas fa-download icon-download-alt"></i></button>
 					</div><!-- .btn-group -->
 				</div><!-- .btn-toolbar -->
 			</th>
@@ -478,7 +485,7 @@
 								href python:'%s/metaobj_manager/manage_main?lang=%s&id=%s'%(context.getRootElement().absolute_url(),request['lang'],metaObj['id']);
 								title python:'acquired from: %s (%s)'%(context.getRootElement().getHome().id, context.getRootElement().attr('titlealt'))"
 							><i class="fas fa-share icon-share"></i></a>
-						<a title="Enabled" href="javascript:;" onclick="zmiEnabledBtnClick(this)"><i tal:attributes="class python:' '.join(['enabled-toggle']+[['far fa-square icon-check-empty'],['far fa-check-square icon-check']][metaObj.get('enabled',0) in [1,True]])"></i></a>
+						<a title="Enabled" href="javascript:;" onclick="zmiEnabledBtnClick(this)"><i tal:attributes="class python:' '.join(['enabled-toggle']+[['far fa-square'],['far fa-check-square']][metaObj.get('enabled',0) in [1,True]])"></i></a>
 						<a tal:attributes="href python:'manage_analyze?lang=%s&id=%s'%(request['lang'],metaObj['id']); title python:'%s - Click for content analysis...'%metaObj['id']" target="_blank"><i tal:on-error="string:ERROR icon" tal:attributes="class python:zmscontext.zmi_icon(metaObj['id'])"></i></a>
 						<a tal:omit-tag="python:metaObj.get('acquired',None)" tal:attributes="href python:'?lang=%s&id=%s'%(request['lang'],metaObj['id'])"><span tal:on-error="string:ERROR name" tal:replace="metaObj/name">the name</span></a>
 						<span class="meta-id-info">
@@ -497,7 +504,6 @@
 
 </tal:block>
 
-<div style="clear:both;">&nbsp;</div>
 </div><!-- #zmi-tab -->
 
 <tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
@@ -534,26 +540,13 @@ function zmiEnabledBtnClick(sender) {
 /**
  * Export xml.
  */
-function zmiExportBtnClick(sender,btn,target) {
-	if (typeof btn=="undefined") {
-		btn = getZMILangStr('BTN_EXPORT');
-	}
-	if (typeof target=="undefined") {
-		target="_blank";
-	}
+function zmiExportBtnClick(sender) {
 	var $fm = $(sender).closest("form");
-	if (target=="_blank") {
-		var href = $fm.attr('action')+'?lang='+getZMILang()+'&btn='+btn;
-		$('input[name="id"]:text,input[name="ids:list"]:checked',$fm).each(function(){
-				href += '&ids:list='+$(this).val();
-			});
-		window.open(href);
-	}
-	else {
-		$fm.attr("target",target);
-		$fm.append('<input type="hidden" name="btn" value="'+btn+'"/>');
-		$fm.submit();
-	}
+	var href = $fm.attr('action')+'?lang='+getZMILang()+'&btn=BTN_EXPORT';
+	$('input[name="id"]:text,input[name="ids:list"]:checked',$fm).each(function(){
+			href += '&ids:list='+$(this).val();
+		});
+	window.open(href);
 	return false;
 }
 
@@ -628,13 +621,13 @@ $(function(){
 /**
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  * EXPERIMENTAL: Generator for Default-ZPT-Code.
- * Cave: ZPT Processing in Zope4 requires $$ for JS String Templates 
+ * Cave: ZPT Processing in Zope4 requires $$ 
+ * for JS String Templates, but not Zope2 or Zope5
  * ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
  */
  function set_zmi_code_default(event) {
 	var confirmed = confirm("The Experimental Generator for Default-ZPT-Code asks:\nReally Reset to Default-Code?");
 	if (!confirmed == true) {
-		console.log('INFO: Function get_zmi_code_default() not executed.');
 		return false;
 	}
 	var $target = $('textarea.zpt',event.srcElement.parentNode);
@@ -644,8 +637,8 @@ $(function(){
 
 	var meta_obj_id = $('table#meta_properties .row_metadata #id').val();
 	var target_id = $('.meta-id input', event.srcElement.parentNode.parentNode.parentNode).val();
-	var comment0 = `<!\-\- $${meta_obj_id}.$${target_id} \-\->`;
-	var comment1 =  `<!\-\- $${meta_obj_id}.$${target_id} \-\->`;
+	var comment0 = `<!\-\- ${meta_obj_id}.${target_id} \-\->`;
+	var comment1 =  `<!\-\- ${meta_obj_id}.${target_id} \-\->`;
 
 	// Generate Model based on GUI-Form
 	$('#meta_properties tbody:nth-child(2) tr').each( function() {
@@ -665,12 +658,11 @@ $(function(){
 		}
 	});
 
-	console.log( 'meta_model = ' + JSON.stringify(meta_model) );
-
 	function shorten_id(str) {
 		// Remove namespace ornaments from meta_id name
 		str = str.split('attr_').reverse()[0];
 		str = str.split('dc_').reverse()[0];
+		str = str.split('/').reverse()[0];
 		return str
 	}
 
@@ -686,15 +678,18 @@ $(function(){
 		var sid = shorten_id(id);
 		if ( meta_model[id]['meta_type'] =='url' ) {
 			// ATTRTYPE URL 
-			tal_defs += `\n\t\t$${sid} python:zmscontext.attr('$${id}');`
-			tal_defs += `\n\t\t$${sid}_obj python:'{' in $${sid} and zmscontext.getLinkObj($${sid},request) or None;`
-			tal_defs += `\n\t\t$${sid}_target python:$${sid}_obj and $${sid}_obj.getHref2IndexHtml(request) or $${sid};`
+			tal_defs += `\n\t\t${sid} python:zmscontext.attr('${id}');`
+			tal_defs += `\n\t\t${sid}_obj python:'{' in ${sid} and zmscontext.getLinkObj(${sid},request) or None;`
+			tal_defs += `\n\t\t${sid}_target python:${sid}_obj and ${sid}_obj.getHref2IndexHtml(request) or ${sid};`
 		} else if ( meta_model[id]['meta_repetitive'] ) {
 			// ATTRTYPE COMPLEX/REPETITIVE 
-			tal_defs +=`\n\t\t$${sid}_list python:zmscontext.filteredChildNodes(request,'$${meta_model[id]['meta_type']}');`
+			tal_defs +=`\n\t\t${sid}_list python:zmscontext.filteredChildNodes(request,'${meta_model[id]['meta_type']}');`
+		} else if ( meta_model[id]['meta_type'] == 'Script (Python)' ) {
+			// ATTRTYPE PYTHON SCRIPT (ZOPE OBJECT)
+			tal_defs += `\n\t\t${sid} here/${id};`
 		} else {
 			// ATTRTYPE STRING (STANDARD)
-			tal_defs += `\n\t\t$${sid} python:zmscontext.attr('$${id}');`
+			tal_defs += `\n\t\t${sid} python:zmscontext.attr('${id}');`
 		}
 	}
 
@@ -704,25 +699,28 @@ $(function(){
 		var sid = shorten_id(id);
 		if ( meta_model[id]['meta_type']=='image' ) {
 			// ATTRTYPE IMAGE
-			tal_content += `\n\t<img class="$${sid}" tal:attributes="src python:$${sid}.getHref(request)" alt="Image" />`;
+			tal_content += `\n\t<img class="${sid}" tal:attributes="src python:${sid}.getHref(request)" alt="Image" />`;
 		} else if ( meta_model[id]['meta_type']=='url' ) {
 			// ATTRTYPE URL 
-			tal_content += `\n\t<a class="$${sid}" tal:condition="$${sid}" tal:attributes="href python:$${sid}_obj and $${sid}_target or $${sid}; target python:$${sid}_obj and '_self' or '_blank';">Link...</a>`;
+			tal_content += `\n\t<a class="${sid}" tal:condition="${sid}" tal:attributes="href python:${sid}_obj and ${sid}_target or ${sid}; target python:${sid}_obj and '_self' or '_blank';">Link...</a>`;
 		} else if ( meta_model[id]['meta_type'] == 'file' ) {
 			// ATTRTYPE FILE
-			tal_content += `\n\t<a class="$${sid}" tal:condition="$${sid}" tal:attributes="href python:$${sid}.getHref(request);title python:'Download-File Size: %s, Type: %s'%($${sid}.getDataSizeStr(),$${sid}.getContentType())" tal:content="python:$${sid}.getFilename()">Filename</a>`;
+			tal_content += `\n\t<a class="${sid}" tal:condition="${sid}" tal:attributes="href python:${sid}.getHref(request);title python:'Download-File Size: %s, Type: %s'%(${sid}.getDataSizeStr(),${sid}.getContentType())" tal:content="python:${sid}.getFilename()">Filename</a>`;
 		} else if ( meta_model[id]['meta_type'] == 'richtext' ) {
 			// ATTRTYPE RICHTEXT
-			tal_content += `\n\t<div class="$${sid}" tal:content="structure $${sid}">$${sid}</div>`;
+			tal_content += `\n\t<div class="${sid}" tal:content="structure ${sid}">${sid}</div>`;
 		} else if ( meta_model[id]['meta_type'] == 'datetime' ) {
 			// ATTRTYPE DATE/TIME
-			tal_content += `\n\t<div class="$${sid}" tal:condition="$${sid}" tal:content="python:zmscontext.getLangFmtDate($${sid},request.get('lang'))">$${sid}</div>`;
+			tal_content += `\n\t<div class="${sid}" tal:condition="${sid}" tal:content="python:zmscontext.getLangFmtDate(${sid},request.get('lang'))">${sid}</div>`;
 		} else if ( meta_model[id]['meta_repetitive'] ) {
 			// ATTRTYPE COMPLEX/REPETITIVE 
-			tal_content += `\n\t<div class="$${sid} repetitive" tal:condition="$${sid}_list">\n\t\t<tal:block tal:repeat="$${sid}_listitem $${sid}_list" tal:content="structure python:$${sid}_listitem.renderShort(request)">$${sid}</tal:block>\n\t</div>`;
+			tal_content += `\n\t<div class="${sid} repetitive" tal:condition="${sid}_list">\n\t\t<tal:block tal:repeat="${sid}_listitem ${sid}_list" tal:content="structure python:${sid}_listitem.renderShort(request)">${sid}</tal:block>\n\t</div>`;
+		} else if ( meta_model[id]['meta_type'] =='Script (Python)' ) {
+			// ATTRTYPE PYTHON SCRIPT (ZOPE OBJECT)
+			tal_content += `\n\t<div class="${sid}" tal:content="structure ${sid}">${id}</div>`;
 		} else {
 			// ATTRTYPE STRING (STANDARD)
-			tal_content += `\n\t<div class="$${sid}" tal:content="$${sid}">$${sid}</div>`;
+			tal_content += `\n\t<div class="${sid}" tal:content="${sid}">${sid}</div>`;
 		}
 	}
 
@@ -734,11 +732,11 @@ $(function(){
 	var default_template = `<div title="EXPERIMENTAL: Generator for Default-ZPT-Code" 
 		tal:define="zmscontext options/zmscontext;
 		id python:zmscontext.getId();
-		css_class python:zmscontext.meta_id;$${tal_defs}"
-	tal:attributes="id id;class css_class">$${tal_content}\n</div>`;
+		css_class python:zmscontext.meta_id;${tal_defs}"
+	tal:attributes="id id;class css_class">${tal_content}\n</div>`;
 
 	// Write TAL-Code into Textarea
-	$target.val(`$${comment1}\n$${default_template}\n$${comment1}`);
+	$target.val(`${comment1}\n${default_template}\n${comment1}`);
 	$target.animate({height: $target.prop('scrollHeight') + 'px'},600);
 
 }

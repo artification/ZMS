@@ -33,11 +33,10 @@ function selectObject(ignoredUrl, ignoredTitle, nodeName) {
 		</div>
 	</div>
 	<div class="controls save">
-		<button type="submit" name="btn" class="btn btn-primary" tal:attributes="value python:here.getZMILangStr('BTN_SAVE')" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+		<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
 	</div>
 </form>
 
-<div style="clear:both;">&nbsp;</div>
 </div><!-- #zmi-tab -->
 <tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
 </body>

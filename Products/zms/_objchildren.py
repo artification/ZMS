@@ -24,11 +24,10 @@
 # Imports.
 import copy
 import time
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import _blobfields
-from . import _fileutil
-from . import standard
+from Products.zms import _blobfields
+from Products.zms import _fileutil
+from Products.zms import standard
 
 
 ################################################################################
@@ -60,7 +59,6 @@ class ObjChildren(object):
     #	ObjChildren.initObjChild
     # --------------------------------------------------------------------------
     def initObjChild(self, id, _sort_id, type, REQUEST):
-      
       ##### ID ####
       metaObjAttr = self.getObjChildrenAttr(id)
       repetitive = metaObjAttr.get('repetitive', 0)==1
@@ -96,11 +94,8 @@ class ObjChildren(object):
     # --------------------------------------------------------------------------
     def _initObjChildren(self, obj_attr, REQUEST):
       id = obj_attr['id']
-      ids = []
-      for ob in self.getChildNodes(REQUEST):
-        if ob.id[:len(id)]==id:
-          ids.append(ob.id)
-      mandatory = obj_attr.get('mandatory', 0)==1
+      ids = [x.getId() for x in self.getChildNodes() if x.getId().startswith(id)]
+      mandatory = obj_attr.get('mandatory',0)
       if mandatory:
         if len(ids) == 0:
           default  = obj_attr.get('custom')
@@ -110,7 +105,7 @@ class ObjChildren(object):
             if obj_attr['type'] == '*' and isinstance(obj_attr['keys'], list) and len( obj_attr['keys']) > 0:
               obj_attr['type'] = obj_attr['keys'][0]
             self.initObjChild(obj_attr['id'], 0, obj_attr['type'], REQUEST)
-      repetitive = obj_attr.get('repetitive', 0)==1
+      repetitive = obj_attr.get('repetitive',0)
       if repetitive:
         if id in ids:
           new_id = self.getNewId(id)
@@ -204,7 +199,7 @@ class ObjChildren(object):
       # Return with message.
       if RESPONSE is not None:
         message = self.getZMILangStr('MSG_INSERTED')%obj.display_type(REQUEST)
-        message = urllib.parse.quote(message)
+        message = standard.url_quote(message)
         target = REQUEST.get('manage_target', '%s/manage_main'%obj.id)
         RESPONSE.redirect('%s?lang=%s&manage_tabs_message=%s'%(target, lang, message))
 

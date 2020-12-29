@@ -17,6 +17,7 @@
 ################################################################################
 
 # Imports.
+from __future__ import absolute_import
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 from DateTime.DateTime import DateTime
@@ -24,34 +25,32 @@ from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 # TODO from Products.ZCatalog import CatalogPathAwareness
 import ZPublisher.HTTPRequest
 import collections
-import urllib.request, urllib.parse, urllib.error
 import re
-import string
 import time
 # Product Imports.
-from . import standard
-from . import zopeutil
-from . import ZMSItem
-from . import ZMSWorkflowItem
-from . import _accessmanager
-from . import _blobfields
-from . import _cachemanager
-from . import _confmanager
-from . import _copysupport
-from . import _deprecatedapi
-from . import _exportable
-from . import _globals
-from . import _multilangmanager
-from . import _objattrs
-from . import _objchildren
-from . import _objinputs
-from . import _objtypes
-from . import _pathhandler
-from . import _versionmanager
-from . import _xmllib
-from . import _textformatmanager
-from . import _zmsattributecontainer
-from . import _zreferableitem
+from Products.zms import _accessmanager
+from Products.zms import _blobfields
+from Products.zms import _cachemanager
+from Products.zms import _confmanager
+from Products.zms import _copysupport
+from Products.zms import _deprecatedapi
+from Products.zms import _exportable
+from Products.zms import _globals
+from Products.zms import _multilangmanager
+from Products.zms import _objattrs
+from Products.zms import _objchildren
+from Products.zms import _objinputs
+from Products.zms import _objtypes
+from Products.zms import _pathhandler
+from Products.zms import _versionmanager
+from Products.zms import _xmllib
+from Products.zms import _textformatmanager
+from Products.zms import _zmsattributecontainer
+from Products.zms import _zreferableitem
+from Products.zms import ZMSItem
+from Products.zms import ZMSWorkflowItem
+from Products.zms import standard
+from Products.zms import zopeutil
 
 __all__= ['ZMSObject']
 
@@ -286,43 +285,9 @@ class ZMSObject(ZMSItem.ZMSItem,
       return self
 
     # --------------------------------------------------------------------------
-    #  ZMSObject.get_conf_blob:
-    # --------------------------------------------------------------------------
-    security.declarePublic('get_conf_blob')
-    def get_conf_blob(self, path, REQUEST, RESPONSE):
-      """ ZMS.get_conf_blob """
-      v = self.getConfProperties()
-      try:
-        for id in path.split('/'):
-          if isinstance(v, dict):
-            v = v[id]
-          elif isinstance(v, list):
-            if id.find( ':int') > 0:
-              v = v[ int( id[:id.find( ':int')])]
-            elif id in v:
-              v = v[ v.index(id)+1]
-            else:
-              l = [x for x in v if x.get('id', None) == id]
-              if len(l) > 0:
-                v = l[0]
-        RESPONSE.setHeader( 'Cache-Control', 'public, max-age=3600')
-        RESPONSE.setHeader( 'Content-Type', v.getContentType())
-        RESPONSE.setHeader( 'Content-Disposition', 'inline;filename="%s"'%v.getFilename())
-        v = v.getData()
-      except:
-        masterId = self.getConfProperty('Portal.Master', '')
-        if len(masterId) > 0:
-          masterHome = getattr(self.getHome(), masterId)
-          masterDocElmnt = masterHome.content
-          v = masterDocElmnt.get_conf_blob(path, REQUEST, RESPONSE)
-        else:
-          standard.writeError(self, "[get_conf_blob]: path=%s"%str(path))
-      return v
-
-    # --------------------------------------------------------------------------
     #  ZMSObject.FileFromData
     # --------------------------------------------------------------------------
-    def FileFromData( self, data, filename='', content_type=None, mediadbStorable=False):
+    def FileFromData( self, data, filename='', content_type=None):
         """
         Creates a new instance of a file from given data.
         @param data: File-data (binary)
@@ -342,7 +307,7 @@ class ZMSObject(ZMSItem.ZMSItem,
     # --------------------------------------------------------------------------
     #  ZMSObject.ImageFromData:
     # --------------------------------------------------------------------------
-    def ImageFromData( self, data, filename='', content_type=None, mediadbStorable=False):
+    def ImageFromData( self, data, filename='', content_type=None):
         file = {}
         file['data'] = data
         file['filename'] = filename
@@ -622,11 +587,11 @@ class ZMSObject(ZMSItem.ZMSItem,
         clazz = self.evalMetaobjAttr( '%s.%s'%(id, 'icon_clazz'))
         if not clazz:
           meta_obj = self.getMetaobj(id)
-          clazzes = {'ZMSResource':'fas fa-asterisk text-muted', \
-              'ZMSLibrary':'fas fa-flask text-muted', \
-              'ZMSPackage':'fas fa-suitcase text-muted',
-              'ZMSRecordSet':'far fa-list-alt text-muted',
-              'ZMSReference':'fas fa-link text-muted'}
+          clazzes = {'ZMSResource':'fas fa-asterisk', \
+              'ZMSLibrary':'fas fa-flask', \
+              'ZMSPackage':'fas fa-suitcase',
+              'ZMSRecordSet':'far fa-list-alt',
+              'ZMSReference':'fas fa-link'}
           clazz = clazzes.get(meta_obj.get('type'), 'fas fa-exclamation-triangle text-danger')
       return clazz
 
@@ -815,9 +780,9 @@ class ZMSObject(ZMSItem.ZMSItem,
       for attr in self.getMetaobj(self.meta_id)['attrs']:
         attr_type = attr['type']
         redirect_self = redirect_self or attr_type in self.getMetaobjIds()+['*']
-      redirect_self = redirect_self and (self.isPageContainer() or not REQUEST.get('btn', '') in [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')])
+      redirect_self = redirect_self and (self.isPageContainer() or not REQUEST.get('btn') in [ 'BTN_CANCEL', 'BTN_BACK'])
       
-      if REQUEST.get('btn', '') not in [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]:
+      if REQUEST.get('btn', '') not in [ 'BTN_CANCEL', 'BTN_BACK']:
         try:
           # Object State
           self.setObjStateModified(REQUEST)
@@ -831,14 +796,13 @@ class ZMSObject(ZMSItem.ZMSItem,
         message += ' (in '+str(int((time.time()-t0)*100.0)/100.0)+' secs.)'
       
       # Return with message.
-      if REQUEST.get('menulock',0) == 1:
+      target_ob = self.getParentNode()
+      if redirect_self or target_ob is None or REQUEST.get('menulock',0) == 1:
         target_ob = self
-        target = REQUEST.get( 'manage_target', '%s/manage_properties'%target_ob.absolute_url())
-      else:
-        target_ob = self.getParentNode()
-        if redirect_self or target_ob is None:
-          target_ob = self
-        target = REQUEST.get( 'manage_target', '%s/manage_main'%target_ob.absolute_url())
+        if REQUEST.get('menulock',0) == 1:
+          # Remain in Current Menu
+          REQUEST.set( 'manage_target', '%s/manage_properties'%target_ob.absolute_url())
+      target = REQUEST.get( 'manage_target', '%s/manage_main'%target_ob.absolute_url())
       target = self.url_append_params( target, { 'lang': lang, messagekey: message})
       target = '%s#zmi_item_%s'%( target, self.id)
       if RESPONSE is not None:
@@ -1145,6 +1109,33 @@ class ZMSObject(ZMSItem.ZMSItem,
 
 
     # --------------------------------------------------------------------------
+    #  ZMSObject.manage_get_node_json:
+    # --------------------------------------------------------------------------
+    def manage_get_node_json(self):
+      """ ZMSObject.manage_get_node_json """
+      content_type = 'text/json; charset=utf-8'
+      filename = '%s.json'%self.id
+      request = self.REQUEST
+      RESPONSE = request.RESPONSE
+      RESPONSE.setHeader('Content-Type',content_type)
+      RESPONSE.setHeader('Content-Disposition','inline;filename="%s"'%filename)
+      RESPONSE.setHeader('Cache-Control', 'no-cache')
+      RESPONSE.setHeader('Pragma', 'no-cache')
+      self.f_standard_html_request( self, request)
+      d = {}
+      d['id'] = self.id
+      d['uid'] = self.get_uid()
+      d['physical_path'] = '/'.join(self.getPhysicalPath())
+      obj_attrs = self.getObjAttrs()
+      for key in obj_attrs:
+        v = self.attr(key)
+        if isinstance( v, _blobfields.MyBlob):
+            v = v.getHref(request)
+        d[key] = v
+      return standard.str_json(d)
+
+
+    # --------------------------------------------------------------------------
     #  ZMSObject.ajaxGetNode:
     # --------------------------------------------------------------------------
     security.declareProtected('View', 'ajaxGetNode')
@@ -1185,7 +1176,7 @@ class ZMSObject(ZMSItem.ZMSItem,
       xml += " restricted=\"%s\""%str(self.hasRestrictedAccess())
       xml += " attr_dc_type=\"%s\""%(self.attr('attr_dc_type'))
       xml += ">"
-      if REQUEST.form.get('get_attrs', 1):
+      if REQUEST.get('get_attrs', 1):
         obj_attrs = self.getObjAttrs()
         for key in [x for x in obj_attrs if x not in ['title', 'titlealt', 'change_dt', 'change_uid', 'change_history', 'created_dt', 'created_uid', 'attr_dc_coverage', 'attr_cacheable', 'work_dt', 'work_uid']]:
           obj_attr = obj_attrs[ key]
@@ -1194,7 +1185,7 @@ class ZMSObject(ZMSItem.ZMSItem,
              obj_attr['datatype_key'] in _globals.DT_DATETIMES:
             v = self.attr(key)
             if v:
-              xml += "<%s>%s</%s>"%(key, self.toXmlString(v), key)
+              xml += "<%s>%s</%s>"%(key, standard.toXmlString(self,v).encode('utf-8'), key)
           elif obj_attr['datatype_key'] in _globals.DT_BLOBS:
             v = self.attr(key)
             if v:
@@ -1330,7 +1321,7 @@ class ZMSObject(ZMSItem.ZMSItem,
         obs.extend( self.getPortalClients())
       
       for ob in obs:
-        xml += ob.ajaxGetNode( context=context, lang=lang, xml_header=False, meta_types=meta_types, REQUEST=REQUEST)
+        xml += standard.pystr(ob.ajaxGetNode( context=context, lang=lang, xml_header=False, meta_types=meta_types, REQUEST=REQUEST))
       
       xml += "</pages>"
       
@@ -1383,7 +1374,7 @@ class ZMSObject(ZMSItem.ZMSItem,
       parent.normalizeSortIds(standard.id_prefix(self.id))
       # Return with message.
       message = self.getZMILangStr('MSG_MOVEDOBJUP')%("<i>%s</i>"%self.display_type(REQUEST))
-      RESPONSE.redirect('%s/manage_main?lang=%s&manage_tabs_message=%s#zmi_item_%s'%(parent.absolute_url(), lang, urllib.parse.quote(message), self.id))
+      RESPONSE.redirect('%s/manage_main?lang=%s&manage_tabs_message=%s#zmi_item_%s'%(parent.absolute_url(), lang, standard.url_quote(message), self.id))
 
 
     ############################################################################
@@ -1399,7 +1390,7 @@ class ZMSObject(ZMSItem.ZMSItem,
       parent.normalizeSortIds(standard.id_prefix(self.id))
       # Return with message.
       message = self.getZMILangStr('MSG_MOVEDOBJDOWN')%("<i>%s</i>"%self.display_type(REQUEST))
-      RESPONSE.redirect('%s/manage_main?lang=%s&manage_tabs_message=%s#zmi_item_%s'%(parent.absolute_url(), lang, urllib.parse.quote(message), self.id))
+      RESPONSE.redirect('%s/manage_main?lang=%s&manage_tabs_message=%s#zmi_item_%s'%(parent.absolute_url(), lang, standard.url_quote(message), self.id))
 
 
     ############################################################################
@@ -1474,7 +1465,7 @@ class ZMSObject(ZMSItem.ZMSItem,
           return RESPONSE.redirect(self.url_append_params(metaCmd['id'], params, sep='&'))
       
       # Return with message.
-      message = urllib.parse.quote(message)
+      message = standard.url_quote(message)
       return RESPONSE.redirect('%s/manage_main?lang=%s&manage_tabs_message=%s'%(target.absolute_url(), lang, message))
 
 

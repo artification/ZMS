@@ -19,13 +19,11 @@
 # Imports.
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 import copy
-import string
 import time
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import zmscontainerobject
-from . import _confmanager
-from . import standard
+from Products.zms import _confmanager
+from Products.zms import standard
+from Products.zms import zmscontainerobject
 
 
 ################################################################################
@@ -108,7 +106,7 @@ class ZMSTrashcan(zmscontainerobject.ZMSContainerObject):
     def manage_changeProperties(self, lang, REQUEST=None): 
       """ ZMSTrashcan.manage_changeProperties """
       
-      if REQUEST.get('btn', '') in  [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]:
+      if REQUEST.get('btn') in  [ 'BTN_CANCEL', 'BTN_BACK']:
         return REQUEST.RESPONSE.redirect('manage_main?lang=%s'%lang)
         
       ##### Garbage Collection #####
@@ -119,7 +117,7 @@ class ZMSTrashcan(zmscontainerobject.ZMSContainerObject):
       message = self.getZMILangStr('MSG_CHANGED')
       if REQUEST and hasattr(REQUEST, 'RESPONSE'):
         if REQUEST.RESPONSE:
-          return REQUEST.RESPONSE.redirect('manage_properties?lang=%s&manage_tabs_message=%s'%(lang, urllib.parse.quote(message)))
+          return REQUEST.RESPONSE.redirect('manage_properties?lang=%s&manage_tabs_message=%s'%(lang, standard.url_quote(message)))
 
 
     # --------------------------------------------------------------------------

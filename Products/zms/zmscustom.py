@@ -17,20 +17,20 @@
 ################################################################################
 
 # Imports.
+from __future__ import absolute_import
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 import copy
 import sys
 import time
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import standard
-from . import zmscontainerobject
-from . import _confmanager
-from . import _fileutil
-from . import _importable
-from . import _ziputil
+from Products.zms import _confmanager
+from Products.zms import _fileutil
+from Products.zms import _importable
+from Products.zms import _ziputil
+from Products.zms import standard
+from Products.zms import zmscontainerobject
 
 
 # ------------------------------------------------------------------------------
@@ -60,14 +60,14 @@ def parseXmlString(self, file):
 ################################################################################
 ################################################################################
 manage_addZMSCustomForm = PageTemplateFile('manage_addzmscustomform', globals()) 
-def manage_addZMSCustom(self, meta_id, lang, _sort_id, REQUEST, RESPONSE):
+def manage_addZMSCustom(self, meta_id, lang, _sort_id, btn, REQUEST, RESPONSE):
   """ manage_addZMSCustom """
   message = ''
   messagekey = 'manage_tabs_message'
   t0 = time.time()
   target = self.absolute_url()
   
-  if REQUEST['btn'] == self.getZMILangStr('BTN_INSERT'):
+  if btn == 'BTN_INSERT':
     
     # Create
     id_prefix = standard.id_prefix(REQUEST.get('id_prefix', 'e'))
@@ -82,7 +82,7 @@ def manage_addZMSCustom(self, meta_id, lang, _sort_id, REQUEST, RESPONSE):
     for attr in metaObj['attrs']:
       attr_type = attr['type']
       redirect_self = redirect_self or attr_type in self.getMetaobjIds()+['*']
-    redirect_self = redirect_self and not REQUEST.get('btn', '') in [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]
+    redirect_self = redirect_self and not REQUEST.get('btn', '') in [ 'BTN_CANCEL', 'BTN_BACK']
     
     obj = getattr(self, obj.id)
     try:
@@ -250,7 +250,7 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
       sessionvalue='%s_%s'%(filtervalue, self.id)
       standard.set_session_value(self,sessionattr, REQUEST.form.get(filterattr, standard.get_session_value(self,sessionattr, '')))
       standard.set_session_value(self,sessionvalue, REQUEST.form.get(filtervalue, standard.get_session_value(self,sessionvalue, '')))
-      if REQUEST.get('btn', '')==self.getZMILangStr('BTN_RESET'):
+      if REQUEST.get('btn')=='BTN_RESET':
         standard.set_session_value(self,sessionattr, '')
         standard.set_session_value(self,sessionvalue, '')
       if standard.get_session_value(self,sessionattr, '') != '' and \
@@ -270,7 +270,7 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
           requestkey = 'filter%s%i'%(filterStereotype, filterIndex)
           sessionkey = '%s_%s'%(requestkey, self.id)
           requestvalue = REQUEST.form.get(requestkey, standard.get_session_value(self,sessionkey, ''))
-          if REQUEST.get('btn', '')==self.getZMILangStr('BTN_RESET'):
+          if REQUEST.get('btn')=='BTN_RESET':
             requestvalue = ''
           REQUEST.set(requestkey, requestvalue)
           standard.set_session_value(self,sessionkey, requestvalue)
@@ -416,7 +416,7 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
       params = {'lang':lang}
       t0 = time.time()
       
-      if action or btn and btn not in [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]:
+      if action or btn and btn not in [ 'BTN_CANCEL', 'BTN_BACK']:
         try:
           ##### Object State #####
           self.setObjStateModified(REQUEST)
@@ -536,7 +536,7 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
       
       # Return with message.
       if RESPONSE is not None:
-        message = urllib.parse.quote(message)
+        message = standard.url_quote(message)
         return RESPONSE.redirect('manage_main?lang=%s&manage_tabs_message=%s'%(lang, message))
       else:
         return ob

@@ -23,14 +23,13 @@ from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 from Products.PageTemplates import ZopePageTemplate
 import copy
 import os
-import urllib.request, urllib.parse, urllib.error
 from zope.interface import implementer
 # Product Imports.
-from . import _fileutil
-from . import standard
-from . import zopeutil
-from . import IZMSMetacmdProvider, IZMSConfigurationProvider, IZMSRepositoryProvider
-from . import ZMSItem
+from Products.zms import _fileutil
+from Products.zms import standard
+from Products.zms import zopeutil
+from Products.zms import IZMSMetacmdProvider, IZMSConfigurationProvider, IZMSRepositoryProvider
+from Products.zms import ZMSItem
 
 
 # Example code.
@@ -46,7 +45,6 @@ pageTemplateExampleCode = \
   '<tal:block tal:content="structure python:here.zmi_body_header(here,request)">zmi_body_header</tal:block>\n' + \
   '<div id="zmi-tab">\n' + \
   '<tal:block tal:content="structure python:here.zmi_breadcrumbs(here,request)">zmi_breadcrumbs</tal:block>\n' + \
-  '<div style="clear:both;">&nbsp;</div>\n' + \
   '</div><!-- #zmi-tab -->\n' + \
   '<script>\n' + \
   '</script>\n' + \
@@ -148,6 +146,8 @@ class ZMSMetacmdProvider(
             d[k] = o[k]
           ob = getattr(self, id)
           if ob:
+            d['__icon__'] = ob.zmi_icon() if 'zmi_icon' in ob.__dict__ else 'fas fa-cog'
+            d['__description__'] = ob.meta_type
             attr = {}
             attr['id'] = id
             attr['ob'] = ob
@@ -307,7 +307,7 @@ class ZMSMetacmdProvider(
             newData += '  return "This is the external method ' + newId + '"\n'
         zopeutil.removeObject(container, id)
         zopeutil.removeObject(container, newId)
-        object = zopeutil.addObject(container, newMethod, newId, newTitle, newData)
+        object = zopeutil.addObject(container, newMethod, newId, newTitle, newData, permissions={'Authenticated':['View']})
       
       # Return with new id.
       return newId
@@ -338,6 +338,8 @@ class ZMSMetacmdProvider(
         return None
       # Refresh Object.
       metaCmd = obs[0]
+      if metaCmd.get('home',None)==None:
+        return None
       if 'exec' in metaCmd:
         metaCmd['execution'] = metaCmd['exec']
         del metaCmd['exec']
@@ -451,7 +453,7 @@ class ZMSMetacmdProvider(
         
         # Acquire.
         # --------
-        if btn == self.getZMILangStr('BTN_ACQUIRE'):
+        if btn == 'BTN_ACQUIRE':
           aq_ids = REQUEST.get('aq_ids', [])
           for newId in aq_ids:
             newAcquired = 1
@@ -460,7 +462,7 @@ class ZMSMetacmdProvider(
         
         # Change.
         # -------
-        elif btn == self.getZMILangStr('BTN_SAVE'):
+        elif btn == 'BTN_SAVE':
           id = REQUEST['id']
           newId = REQUEST['el_id'].strip()
           newAcquired = 0
@@ -482,19 +484,19 @@ class ZMSMetacmdProvider(
         
         # Copy.
         # -----
-        elif btn == self.getZMILangStr('BTN_COPY'):
+        elif btn == 'BTN_COPY':
           metaOb = self.getMetaCmd(id)
           if metaOb.get('acquired', 0) == 1:
             portalMaster = self.getPortalMaster()
             if portalMaster is not None:
               REQUEST.set('ids', [id])
-              xml =  portalMaster.manage_changeMetacmds(self.getZMILangStr('BTN_EXPORT'), lang, REQUEST, RESPONSE)
+              xml =  portalMaster.manage_changeMetacmds('BTN_EXPORT', lang, REQUEST, RESPONSE)
               self.importXml(xml=xml)
               message = self.getZMILangStr('MSG_IMPORTED')%('<i>%s</i>'%id)
         
         # Delete.
         # -------
-        elif btn == self.getZMILangStr('BTN_DELETE'):
+        elif btn == 'BTN_DELETE':
           if id:
             ids = [id]
           else:
@@ -506,7 +508,7 @@ class ZMSMetacmdProvider(
         
         # Export.
         # -------
-        elif btn == self.getZMILangStr('BTN_EXPORT'):
+        elif btn == 'BTN_EXPORT':
           revision = '0.0.0'
           value = []
           ids = REQUEST.get('ids', [])
@@ -539,7 +541,7 @@ class ZMSMetacmdProvider(
         
         # Import.
         # -------
-        elif btn == self.getZMILangStr('BTN_IMPORT'):
+        elif btn == 'BTN_IMPORT':
           f = REQUEST['file']
           if f:
             filename = f.filename
@@ -551,7 +553,7 @@ class ZMSMetacmdProvider(
         
         # Insert.
         # -------
-        elif btn == self.getZMILangStr('BTN_INSERT'):
+        elif btn == 'BTN_INSERT':
           newId = REQUEST.get('_id').strip()
           newAcquired = 0
           newRevision = REQUEST.get('_revision', '0.0.0').strip()
@@ -568,7 +570,7 @@ class ZMSMetacmdProvider(
         self.getRepositoryManager().exec_auto_commit(self, id)
         
         # Return with message.
-        message = urllib.parse.quote(message)
+        message = standard.url_quote(message)
         return RESPONSE.redirect('manage_main?lang=%s&manage_tabs_message=%s&id=%s'%(lang, message, id))
 
 ################################################################################

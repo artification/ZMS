@@ -15,6 +15,7 @@ of depending packages (see requirements.txt).
 """
 import os
 import sys
+import re
 from setuptools import setup
 
 setup_path = os.path.dirname(__file__)
@@ -22,32 +23,15 @@ for path in sys.path:
   if path.endswith('site-packages'):
     site_packages = path
 
-INSTALL_REQUIRES = [
-  'Zope>=4.1.2',
-  'docutils',
-  'Paste',
-  'Products.CMFCore>=2.4.0',
-  'Products.ExternalMethod>=4.3',
-  'Products.GenericSetup>=2.0',
-  'Products.MailHost>=4.7',
-  'Products.Sessions>=4',
-  'Products.StandardCacheManagers>=4',
-  'tempstorage>=4',
-  'zope.app.publication>=4',
-  'zope.authentication>=4',
-  'zope.untrustedpython>=4',
-  'zope.error>=4',
-  'ZopeUndo>=4',
-]
-
-README = open(os.path.join(setup_path, 'README')).read()
-
-# Remove text from version for PyPI
-VERSION = open(os.path.join(setup_path, 'Products', 'zms', 'version.txt')).read().replace('ZMS4-', '').replace('.REV', '')
-VERSION = VERSION.strip().split('.')
-# Remove revision too
-if len(VERSION)==4: VERSION.pop()
-VERSION = '.'.join(VERSION)
+def read_version():
+    # Remove text from version for PyPI
+    raw_version = open(os.path.join(setup_path, 'Products', 'zms', 'version.txt')).read()
+    cleaned_version = re.sub(r'ZMS\d*-', '', raw_version).replace('.REV', '')
+    version_list = cleaned_version.strip().split('.')
+    # Remove revision too
+    if 4 == len(version_list):
+        version_list.pop()
+    return '.'.join(version_list)
 
 CLASSIFIERS = [
   'Development Status :: 4 - Beta',
@@ -71,13 +55,13 @@ CLASSIFIERS = [
 setup(
   name                  = 'ZMS',
   description           = 'ZMS: Simplified Content Modelling',
-  long_description      = README,
-  version               = VERSION,
+  long_description      = open(os.path.join(setup_path, 'README')).read(),
+  version               = read_version(),
   author                = 'HOFFMANN+LIEBENBERG in association with SNTL Publishing, Berlin',
   author_email          = 'zms@sntl-publishing.com',
   url                   = 'http://www.zms-publishing.com',
   download_url          = 'https://zmslabs.org',
-  install_requires      = INSTALL_REQUIRES,
+  install_requires      = open(os.path.join(setup_path, 'requirements.txt')).readlines(),
   namespace_packages    = ['Products'],
   packages              = ['Products.zms'],
   classifiers           = CLASSIFIERS,

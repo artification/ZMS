@@ -21,7 +21,7 @@
 	offset python:options.get('offset',pageStart);">
 
 <form method="get" tal:attributes="action form_action">
-<div class="d-flex justify-content-between pagination-pre mb-3">
+<div class="d-flex justify-content-between pagination-pre">
 	<div class="pull-left" tal:content="structure python:here.zmi_pagination(size=size,pageSize=pageSize,pageIndex=pageIndex)">
 		zmi_pagination
 	</div>
@@ -65,7 +65,7 @@
 						<div class="dropdown-menu">
 							<a block tal:condition="python:size>0 and not 'select' in actions"
 								class="dropdown-item" href="javascript:;" onclick="zmiToggleSelectionButtonClick(this)">
-								<i class="far fa-check-square"></i>
+								<i class="fas fa-check-square"></i>
 								<tal:block tal:content="python:'%s/%s'%(here.getZMILangStr('BTN_SLCTALL'),here.getZMILangStr('BTN_SLCTNONE'))">Select all/none</tal:block>
 							</a>
 							<a tal:condition="python:'insert' in actions"
@@ -209,8 +209,10 @@
 	</tal:block>
 </tbody>
 </table>
-<div class="pagination-post">
-	<div class="pull-left" tal:content="structure python:here.zmi_pagination(size=size,pageSize=pageSize,pageIndex=pageIndex)">zmi_pagination</div>
+<div class="pagination-post clearfix"
+	tal:define="pagination python:here.zmi_pagination(size=size,pageSize=pageSize,pageIndex=pageIndex)"
+	tal:condition="python:request.get('has_pagination',True)">
+	<div class="pull-left" tal:content="structure pagination">zmi_pagination</div>
 </div>
 </form>
 

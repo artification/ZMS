@@ -25,9 +25,10 @@ ZMI.prototype.parseURLParams = function(url) {
 	return qd;
 }
 
-var zmiParams = {};
-$(function(){
+var zmiParams;
+$ZMI.registerReady(function(){
 	// Parse params (?) and pseudo-params (#).
+	zmiParams = {};
 	var href = self.location.href;
 	var base_url = href;
 	var delimiter_list = ['?','#'];
@@ -59,19 +60,11 @@ $(function(){
 		}
 	}
 	zmiParams['base_url'] = base_url;
-	if (typeof zmiParams['zmi-debug'] != "undefined") {
-		$ZMI.toggleDebug(true);
-	}
-
-	$ZMI.setCursorWait("BO zmi.extensions");
-
-	// Execute registered onReady-callbacks.
-	$ZMI.writeDebug("zmi.extensions: Execute registered onReady-callbacks.");
-	$ZMI.runReady();
 
 	// Content-Editable ////////////////////////////////////////////////////////
 	if (self.location.href.indexOf('/manage')>0 || self.location.href.indexOf('preview=preview')>0) {
-		$('.zmi-selectable .center')
+		$("<style type='text/css'>.contentEditable.zmi-highlight{background-color:#f7f7f9;}</style>").appendTo("head");
+		$('.contentEditable')
 			.mouseover( function(evt) {
 					$(this).addClass('zmi-highlight'); 
 				})
@@ -83,7 +76,7 @@ $(function(){
 				if (evt.target != "undefined" && $.inArray(evt.target.nodeName.toLowerCase(),['a','button','input','select','textarea']) > -1) {
 					return;
 				}
-				var href = $(this).find(':first-child').attr("data-absolute-url");
+				var href = $(this).attr("data-absolute-url");
 				var lang = getZMILang();
 				if (self.location.href.indexOf(href+'/manage_main')>=0) {
 					href += '/manage_properties';
@@ -117,6 +110,7 @@ $(function(){
 			})
 		.attr( "title", "Click to edit!");
 	}
+
 	// ZMS plugins
 	if (typeof zmiParams['ZMS_HIGHLIGHT'] != 'undefined' && typeof zmiParams[zmiParams['ZMS_HIGHLIGHT']] != 'undefined') {
 		$.plugin('zmi_highlight',{
@@ -124,7 +118,6 @@ $(function(){
 			});
 		$.plugin('zmi_highlight').get('body',function(){});
 	}
-	$ZMI.setCursorAuto("EO zmi.extensions");
 });
 
 /**
@@ -162,30 +155,6 @@ ZMI.prototype.icon_selector = function(name) {
 }
 
 /**
- * Debug
- */
-ZMI.prototype.toggleDebug = function(b) {
-	var $div = $("div#zmi-debug");
-	if ($div.length==0) {
-		$("body").append('<div id="zmi-debug"></div>');
-		$div = $("div#zmi-debug");
-	}
-	if (b) {
-		$div.css("display","block");
-	}
-	else {
-		$div.css("display","none");
-	}
-};
-ZMI.prototype.writeDebug = function(s) {
-	var $div = $("div#zmi-debug");
-	if ($div.css("display")!="none") {
-		var d = new Date();
-		$div.html("<code>["+(d)+'...'+(d.getMilliseconds())+"] "+s.replace(/</gi,'&lt;')+'</code><br/>'+$div.html());
-	}
-};
-
-/**
  *  Wait cursor.
  */
 var zmiCursor = [];
@@ -194,11 +163,11 @@ ZMI.prototype.setCursorWait = function(s) {
 		$("body").css("cursor","wait");
 	}
 	zmiCursor.push(s);
-	this.writeDebug(">>>> " + zmiCursor.join(" > "));
+	console.log("setCursorWait[" + zmiCursor.length + "]: " + s);
+
 }
 
 ZMI.prototype.setCursorAuto = function() {
-	this.writeDebug("<<<< " + zmiCursor.join(" > "));
 	zmiCursor.pop();
 	if (zmiCursor.length == 0) {
 		$("body").css("cursor","auto");
@@ -265,9 +234,8 @@ ZMI.prototype.getLangStr = function(key, lang) {
 /**
  * Cache Ajax requests.
  */
-var zmiCache = {};
-ZMI.prototype.getCachedValue = function(k) {return zmiCache[k];}
-ZMI.prototype.setCachedValue = function(k,v) {zmiCache[k]=v;return v;}
+ZMI.prototype.getCachedValue = function(k) {var v = localStorage["zmiCache["+k+"]"]; return typeof v=='undefined'?v:JSON.parse(v);}
+ZMI.prototype.setCachedValue = function(k,v) {localStorage.setItem("zmiCache["+k+"]",JSON.stringify(v));return v;}
 
 /**
  * Returns request-property.
@@ -290,7 +258,6 @@ ZMI.prototype.getReqProperty = function(key, defaultValue) {
 		datatype: 'text',
 		async: false
 		}).responseText;
-	this.writeDebug(url+'/getReqProperty('+key+','+defaultValue+'): '+r);
 	return r;
 }
 
@@ -323,9 +290,9 @@ ZMI.prototype.getConfProperty = function(key, defaultValue) {
 			url: url+'/getConfProperty',
 			data: data,
 			datatype: 'text',
+			headers: {'Cache-Control':'max-age=1800','X-Accel-Expires':1800},
 			async: false
 			}).responseText;
-		this.writeDebug(url+'/getConfProperty('+key+','+defaultValue+'): '+r);
 		this.setCachedValue(key,r);
 	}
 	return r;
@@ -347,7 +314,6 @@ ZMI.prototype.getConfProperties = function(prefix) {
 			datatype: 'text',
 			async: false
 			}).responseText;
-		this.writeDebug(url+'/getConfProperties('+prefix+'): '+r);
 		this.setCachedValue(prefix,r);
 	}
 	return eval("("+r+")");
@@ -368,7 +334,6 @@ ZMI.prototype.display_icon = function(meta_type) {
 		} else {
 			url='';
 		}
-		this.writeDebug(url+'/display_icon');
 		v = $.ajax({
 			url: url+'/display_icon',
 			data: data,
@@ -412,4 +377,11 @@ ZMI.prototype.CopyToClipboard = function(str) {
 	} catch (e) {
 	}
 	$temp.remove();
+}
+
+/**
+ * $: Register 
+ */
+if (typeof $ != "undefined") {
+	$ZMI.runReady();
 }

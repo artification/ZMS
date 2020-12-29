@@ -17,12 +17,14 @@
 ################################################################################
 
 # Imports.
-import tempfile
+from __future__ import absolute_import
 from App.Common import package_home
+import tempfile
 # Product Imports.
-from . import standard
-from . import _fileutil
-from . import _xmllib
+from Products.zms import _fileutil
+from Products.zms import _xmllib
+from Products.zms import standard
+
 
 def warn(self,old,new=None):
   import warnings
@@ -406,7 +408,7 @@ class DeprecatedAPI(object):
     warn(self, 'toXmlString', 'Products.zms.standard.toXmlString')
     return standard.toXmlString(self, v, xhtml, encoding)
 
-  def parseXmlString(self, xml, mediadbStorable=True):
+  def parseXmlString(self, xml):
     warn(self, 'parseXmlString', 'Products.zms.standard.parseXmlString')
     return standard.parseXmlString(xml)
 

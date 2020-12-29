@@ -1,7 +1,8 @@
 <tal:block tal:define="
-	dummy0 python:request.set('ZMI_LIBS_SCRIPT',request.get('ZMI_LIBS_SCRIPT',[])+
+	dummy0 python:request.set('ZMI_LIBS_JS',request.get('ZMI_LIBS_JS',[])+
 		['/++resource++zms_/jquery/diff/diff_match_patch.js'
 		,'/++resource++zms_/jquery/diff/jquery.pretty-text-diff.min.js'
+		,'/++resource++zms_/ZMSRepositoryManager/manage_main_diff.js'
 		]);
 	standard modules/Products.zms/standard;
 	provider_diffs python:[(x,here.getDiffs(x,here.get_ignore_orphans())) for x in here.getRepositoryProviders()];
@@ -13,14 +14,20 @@
 				<a tal:attributes="href python:'%s/manage_main?lang=%s'%(provider.absolute_url(),request['lang'])" target="_blank"><tal:block tal:content="python:provider.id">the provider</tal:block></a>
 			</label>
 			<div class="col-sm-10" tal:define="
-					local_files python:here.localFiles(provider).values();
+					local_files python:list(here.localFiles(provider).values());
 					ids python:standard.distinct_list([x['id'] for x in local_files]);
 					ids_sorting python:ids.sort();">
 				<div tal:repeat="id ids">
 					<i class="fas fa-check-circle text-success"></i>
-					<a tal:attributes="href python:'%s/manage_%s?lang=%s&id=%s'%(provider.absolute_url(), id=='__metas__' and 'metas' or 'main',request['lang'],id)" target="_blank"
-						tal:content="id">id
+					<a tal:attributes="href python:'%s/manage_%s?lang=%s&id=%s'%(provider.absolute_url(), id=='__metas__' and 'metas' or 'main',request['lang'],id)" target="_blank">
+						<tal:block tal:repeat="icon python:[x['__icon__'] for x in local_files if x['id']==id and '__icon__' in x and x['__icon__']]">
+							<i tal:attributes="class icon"></i>
+						</tal:block>
+						<tal:block tal:content="id">id</tal:block>
 					</a>
+					<tal:block tal:repeat="desc python:[x['__description__'] for x in local_files if x['id']==id and '__description__' in x and x['__description__']]">
+						( <tal:block tal:content="desc">the description</tal:block> )
+					</tal:block>
 				</div>
 			</div>
 		</div>
@@ -31,6 +38,7 @@
 	><tal:block
 		tal:define="zmscontext python:here.getSelf();
 			provider python:provider_diff[0];
+			local_files python:list(here.localFiles(provider).values());
 			diffs python:provider_diff[1];
 			ids python:standard.distinct_list([x[2] for x in diffs]);
 			ids_sorting python:ids.sort();"
@@ -42,18 +50,19 @@
 		</label>
 		<div class="col-sm-10">
 			<table class="table repo-diff-files">
-				<colgroup>
-				<col width="1em"/>
-				<col width="30%"/>
-				<col width="*"/>
-			</colgroup>
 			<tal:block tal:repeat="id ids">
 				<tr>
-					<td><input type="checkbox" name="ids:list" tal:attributes="value python:'%s:%s'%(provider.id,id)" checked="checked"></td>
+					<td class="meta-ids"><input type="checkbox" name="ids:list" tal:attributes="value python:'%s:%s'%(provider.id,id)" checked="checked"></td>
 					<td>
 						<a tal:attributes="href python:'%s/manage_%s?lang=%s&id=%s'%(provider.absolute_url(), id=='__metas__' and 'metas' or 'main',request['lang'],id)" target="_blank"> 
+							<tal:block tal:repeat="icon python:[x['__icon__'] for x in local_files if x['id']==id and '__icon__' in x and x['__icon__']]">
+								<i tal:attributes="class icon"></i>
+							</tal:block>
 							<strong tal:content="id">the id</strong>
 						</a>
+						<tal:block tal:repeat="desc python:[x['__description__'] for x in local_files if x['id']==id and '__description__' in x and x['__description__']]">
+							( <tal:block tal:content="desc">the description</tal:block> )
+						</tal:block>
 					</td>
 					<td>
 					<div style="white-space: nowrap;" 
@@ -71,7 +80,7 @@
 								is_modified python:len(ld)>0 and len(rd)>0;
 								is_removed python:len(ld)>0 and len(rd)==0;
 								filestate python:is_new and 'new' or (is_modified and 'modified' or (is_removed and 'removed' or ''));
-								filestate_css python:{'new':'sucess','modified':'warning','removed':'danger','':'info'}[filestate];">
+								filestate_css python:{'new':'success','modified':'warning','removed':'danger','':'info'}[filestate];">
 							<i tal:condition="python:l and l.get('data') is None" class="fa fa-exclamation-triangle text-danger" title="not found!"></i>
 							<span title="State"
 								tal:condition="not:python:l and l.get('data') is None"
@@ -139,63 +148,3 @@
 	</div>
 </tal:block>
 </tal:block>
-
-<script>
-//<!--
-	$(function() {
-		if ( $('.prettyTextDiff').length > 0 ) {
-			$('#repo-changesets').prepend('<h4>Changesets</h4>');
-		}
-		$(".prettyTextDiff").each(function() {
-			var diffContainer = ".diff";
-			$(this).prettyTextDiff({
-				cleanup:true,
-				originalContainer:".original",
-				changedContainer:".changed",
-				diffContainer:diffContainer
-			});
-			var $diffContainer = $(diffContainer,this);
-			var lines = $diffContainer.html().replace(/<span>/gi,'').replace(/<\/span>/gi,'').split("<br>");
-			var show = [];
-			var changed = false;
-			for (var i = 0; i < lines.length; i++) {
-				var line = lines[i];
-				changed |= line.indexOf("<"+"del>")>=0 || line.indexOf("<ins>")>=0;
-				if (changed) {
-					show.push(i);
-				}
-				changed &= !(line.indexOf("<"+"/del>")>=0 || line.indexOf("</ins>")>=0);
-			}
-			var html = [];
-			changed = false;
-			for (var i = 0; i < lines.length; i++) {
-				var line = lines[i];
-				changed |= line.indexOf("<"+"del>")>=0 || line.indexOf("<"+"ins>")>=0;
-				line = '<'+'span class="line-number'+(changed?' line-changed':'')+'">'+(i+1)+'</span> '+lines[i];
-				if (!(show.contains(i-1) || show.contains(i) || show.contains(i+1))) {
-					line = '<'+'span class="diff-unchanged d-none">'+line+'<'+'/span>';
-				}
-				else {
-					line = line+'<'+'br/>';
-				}
-				html.push(line);
-				changed &= !(line.indexOf("<"+"/del>")>=0 || line.indexOf("<"+"/ins>")>=0);
-			}
-			$diffContainer.html(html.join(""));
-			$("strong",$(this).closest("tr").prev("tr")).addClass("zmi-helper-clickable").click(function() {
-				if ($(".diff-unchanged.d-none",$diffContainer).length > 0) {
-					$(".diff-unchanged",$diffContainer).removeClass("d-none").after("<br>");
-				}
-				else if ($(".diff-unchanged",$diffContainer).length > 0) {
-					$(".diff-unchanged",$diffContainer).addClass("d-none").next("br").remove();
-				}
-			});
-		});
-	});
-	function focus_anchorid(anchorid) {
-		$('.table.focus').removeClass('focus');
-		$(document).scrollTop( $(anchorid).offset().top );
-		$(anchorid).addClass('focus');
-	}
-// -->
-</script>

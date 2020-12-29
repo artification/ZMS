@@ -25,15 +25,14 @@ import fnmatch
 import math
 import string
 import time
-import urllib.request, urllib.parse, urllib.error
 import zExceptions
 # Product Imports.
-from . import ZMSMetaobjManager
-from . import pilutil
-from . import standard
-from . import zopeutil
-from . import _blobfields
-from . import _globals
+from Products.zms import ZMSMetaobjManager
+from Products.zms import pilutil
+from Products.zms import standard
+from Products.zms import zopeutil
+from Products.zms import _blobfields
+from Products.zms import _globals
 
 
 # ------------------------------------------------------------------------------
@@ -56,7 +55,8 @@ def getobjattrdefault(obj, obj_attr, lang):
       elif type(default) is dict:
         v = default.copy()
       else:
-        if type( default) is str and len( default) > 0:
+        datatype = obj_attr['datatype_key']
+        if default and datatype not in _globals.DT_TEXTS and standard.is_str(default):
           default = standard.dt_exec(obj,default)
         v = default
     return v
@@ -76,12 +76,12 @@ def getobjattr(self, obj, obj_attr, lang):
   # Get other.
   v = None
   key = self._getObjAttrName(obj_attr, lang)
-  if key in obj.__dict__.keys():
+  if key in obj.__dict__:
     v = getattr(obj, key)
   # Default mono-lingual attributes to primary-lang.
   if v is None:
     key = self._getObjAttrName({'id':obj_attr['id'],'multilang':not obj_attr['multilang']}, self.getPrimaryLanguage())
-    if key in obj.__dict__.keys():
+    if key in obj.__dict__:
       v = getattr(obj, key)
   # Default value.
   if v is None:
@@ -316,7 +316,7 @@ class ObjAttrs(object):
         filteredMetaObjAttrs = [x for x in metaObj['attrs'] if x['id'] == 'format']
         if len(filteredMetaObjAttrs) == 1:
           if REQUEST.get('ZMS_INSERT'):
-            default = standard.dt_exec(self, str( filteredMetaObjAttrs[0].get('default', '')))
+            default = standard.dt_exec(self, standard.pystr( filteredMetaObjAttrs[0].get('default', '')))
             if default:
               fmt = default
             else:
@@ -330,7 +330,7 @@ class ObjAttrs(object):
           REQUEST.set('data', data)
           text_fmt = self.getTextFormat(fmt, REQUEST)
           form_fixed = form_fixed or ( text_fmt is not None and not text_fmt.getTag() and not text_fmt.getSubTag())
-        ltxt = str(value).lower()
+        ltxt = standard.pystr(value).lower()
         form_fixed = form_fixed or ( ltxt.find( '<form') >= 0 or ltxt.find( '<input') >= 0 or ltxt.find( '<script') >= 0)
         if form_fixed:
           css = 'form-control form-fixed'
@@ -671,6 +671,9 @@ class ObjAttrs(object):
         b = b and v
       obj_vers = self.getObjVersion(REQUEST)
       obj_attrs = self.getObjAttrs()
+      now = datetime.datetime.now()
+      if 'preview_time_travel' in REQUEST.keys():
+        now = datetime.datetime.strptime(REQUEST['preview_time_travel'],self.getZMILangStr('SHORTDATE_FMT'))
       for key in ['active', 'attr_active_start', 'attr_active_end']:
         if key in obj_attrs:
           obj_attr = obj_attrs[key]
@@ -689,23 +692,17 @@ class ObjAttrs(object):
           # Start time.
           elif key == 'attr_active_start':
             if value is not None:
-              try:
-                dt = DateTime(time.mktime(value))
-                b = b and dt.isPast()
-              except:
-                # todo: consistent replacement of time by datetime
-                dtValue = datetime.datetime(value[0], value[1], value[2], value[3], value[4], value[5], value[6])
-                b = b and datetime.datetime.now() > dtValue
+              dt = datetime.datetime.fromtimestamp(time.mktime(value))
+              b = b and now > dt
+              if dt > now and self.REQUEST.get('ZMS_CACHE_EXPIRE_DATETIME', dt) >= dt:
+                self.REQUEST.set('ZMS_CACHE_EXPIRE_DATETIME',dt)
           # End time.
           elif key == 'attr_active_end':
             if value is not None:
-              try:
-                dt = DateTime(time.mktime(value))
-                b = b and (dt.isFuture() or (dt.equalTo(dt.earliestTime()) and dt.latestTime().isFuture()))
-              except:
-                # todo: consistent replacement of time by datetime
-                dtValue = datetime.datetime(value[0], value[1], value[2], value[3], value[4], value[5], value[6])
-                b = b and dtValue < datetime.datetime.now()
+              dt = datetime.datetime.fromtimestamp(time.mktime(value))
+              b = b and dt > now
+              if dt > now and self.REQUEST.get('ZMS_CACHE_EXPIRE_DATETIME', dt) >= dt:
+                self.REQUEST.set('ZMS_CACHE_EXPIRE_DATETIME',dt)
           if not b: break
       return b
 
@@ -745,6 +742,7 @@ class ObjAttrs(object):
       
       #-- Blob-Fields
       if datatype in _globals.DT_BLOBS:
+        stored = False
         if self.getType()=='ZMSRecordSet' and isinstance(v, _blobfields.MyBlob):
           metaObj = self.getMetaobj(self.meta_id)
           metaObjAttrId = metaObj['attrs'][0]['id']
@@ -763,11 +761,15 @@ class ObjAttrs(object):
           else:
             v = _blobfields.createBlobField(self, datatype, v)
             v.filename = standard.umlaut_quote(v.filename, {':':'_','<':'_','>':'_','*':'_','?':'_','"':'_','|':'_',',':'_'})
+            stored = True
         if isinstance(v, dict):
           if len(v.get('filename', ''))==0:
             v = None
           else:
             v = _blobfields.createBlobField(self, datatype, v)
+            stored = True
+        if stored and self.getType()=='ZMSRecordSet':
+          v.on_setobjattr()
       
       #-- DateTime-Fields.
       if datatype in _globals.DT_DATETIMES:

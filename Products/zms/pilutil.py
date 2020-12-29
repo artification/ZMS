@@ -20,8 +20,9 @@
 from AccessControl.SecurityInfo import ModuleSecurityInfo
 import tempfile
 # Product Imports.
-from . import _fileutil
-from . import standard
+from Products.zms import _fileutil
+from Products.zms import standard
+from Products.zms import svgutil
 
 security = ModuleSecurityInfo('Products.zms.pilutil')
 
@@ -36,6 +37,20 @@ def enabled():
       return True
     except:
       return False
+
+security.declarePublic('generate_preview')
+def generate_preview(self, hiresKey, loresKey, maxdim):
+  request = self.REQUEST
+  lang = request['lang']
+  hires = self.attr(hiresKey)
+  lores = self.attr(loresKey)
+  if hires is None and lores is not None:
+    if lores.getWidth() > int(maxdim):
+      hires = lores
+  if hires is not None:
+    thumb = thumbnail( hires, int(maxdim))
+    self.setObjProperty(loresKey,thumb,lang)
+    self.setObjProperty(hiresKey,hires,lang)
 
 
 security.declarePublic('thumbnail')
@@ -71,45 +86,59 @@ def resize(img, size, mode='resize', sffx='_thumbnail', qual=75):
   filepath = _fileutil.getOSPath('%s/%s'%(tempfolder, img.filename))
   _fileutil.exportObj(img, filepath)
   
+  # Resize SVG
+  svg_dim = svgutil.get_dimensions(img)
+  if svg_dim is not None:
+    img = svgutil.set_dimensions(img,size)
+    f = open(filepath, 'wb')
+    f.write(img.getData())
+    f.close()
+  
   # Resize image
-  im = Image.open(filepath)
-  im = im.convert('RGB')
-  maxdim = max(list(size))
-  if mode == 'thumbnail':
-    try:
-      im.thumbnail((maxdim, maxdim), Image.ANTIALIAS)
-    except:
-      im.thumbnail((maxdim, maxdim))
-  elif mode == 'resize':
-    try:
-      im = im.resize(size, Image.ANTIALIAS)
-    except:
-      im = im.resize(size)
-  elif mode == 'square':
-    try:
-      width, height = im.size
-      dst_width, dst_height = maxdim, maxdim
-      if width > height:
-        delta = width - height
-        left = int(delta/2)
-        upper = 0
-        right = height + left
-        lower = height
-      else:
-        delta = height - width
-        left = 0
-        upper = int(delta/2)
-        right = width
-        lower = width + upper
-      im = im.crop(( left, upper, right, lower))
-      im = im.resize((dst_width, dst_height), Image.ANTIALIAS)
-    except:
-      im.resize(size)
-  im.convert('RGB').save(filepath, "JPEG", quality=qual, optimize=True)
+  else:
+    im = Image.open(filepath)
+    im = im.convert('RGB')
+    maxdim = max(list(size))
+    if mode == 'thumbnail':
+      try:
+        im.thumbnail((maxdim, maxdim), Image.ANTIALIAS)
+      except:
+        im.thumbnail((maxdim, maxdim))
+    elif mode == 'resize':
+      try:
+        im = im.resize(size, Image.ANTIALIAS)
+      except:
+        im = im.resize(size)
+    elif mode == 'square':
+      try:
+        width, height = im.size
+        dst_width, dst_height = maxdim, maxdim
+        if width > height:
+          delta = width - height
+          left = int(delta/2)
+          upper = 0
+          right = height + left
+          lower = height
+        else:
+          delta = height - width
+          left = 0
+          upper = int(delta/2)
+          right = width
+          lower = width + upper
+        im = im.crop(( left, upper, right, lower))
+        im = im.resize((dst_width, dst_height), Image.ANTIALIAS)
+      except:
+        im.resize(size)
+    im.convert('RGB').save(filepath, "JPEG", quality=qual, optimize=True)
   
   # Read resized image from file-system
   f = open(filepath, 'rb')
   result_data = f.read()
+  f.close()
+  
+  # Remove temp-folder and images
+  _fileutil.remove(tempfolder, deep=1)
+  
   thumb_sffx = str(sffx)
   getfilename = _fileutil.extractFilename(filepath).split('.')
   filename = getfilename[0:-1]
@@ -118,10 +147,6 @@ def resize(img, size, mode='resize', sffx='_thumbnail', qual=75):
   extension = _fileutil.extractFileExt(filepath)
   result_filename = filename + thumb_sffx + '.' + extension
   result = {'data':result_data,'filename':result_filename}
-  f.close()
-  
-  # Remove temp-folder and images
-  _fileutil.remove(tempfolder, deep=1)
   
   # Returns resulting image
   image = standard.ImageFromData(context, result['data'], result['filename'])

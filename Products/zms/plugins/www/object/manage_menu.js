@@ -13,9 +13,15 @@ function zmiRefresh() {
 		href = window.parent.manage_main.$ZMI.getPhysicalPath();
 	}
 	catch(e) {
-		$ZMI.writeDebug('zmiRefresh: cannot get physical-path from parent - ' + e);
+		console.log('zmiRefresh: cannot get physical-path from parent - ' + e);
 	}
 	$ZMI.objectTree.init(".zmi-sitemap",href,{params:{meta_types:$ZMI.getConfProperty('zms.plugins.www.object.manage_menu.meta_types','0,1,ZMSTrashcan')}});
+}
+
+// Leading Zeros
+// https://gist.github.com/aemkei/1180489
+function pad(a,b){
+	return(1e15+a+"").slice(-b)
 }
 
 function zmiBookmarksChanged() {
@@ -101,7 +107,7 @@ function zmiHistoryChanged() {
 						if (typeof not_found=="undefined" || not_found!="1") {
 							var titlealt = $(this).attr("titlealt");
 							var absolute_url = $(this).attr("absolute_url");
-							var icon = $(this).attr("display_icon");
+							var icon = $(this).attr("zmi_icon");
 							if (icon && icon.indexOf('<')!=0) {
 								icon = $ZMI.icon(icon);
 							}
@@ -113,7 +119,7 @@ function zmiHistoryChanged() {
 								html += '<div class="dropdown-menu" role="menu" aria-labelledby="dropdownMenu1">';
 								html += '<div class="dropdown-header">'+$ZMI.icon('far-fa-clock')+' Verlauf</div>';
 							}
-							html += '<a class="dropdown-item" href="'+absolute_url+'/manage_main?lang='+lang+'" target="manage_main">'+(i+1)+'. '+icon+' '+titlealt+'</a>';
+							html += '<a class="dropdown-item" href="'+absolute_url+'/manage_main?lang='+lang+'" target="manage_main">'+pad((i+1),2)+'. '+icon+' '+titlealt+'</a>';
 							i++;
 						}
 					});

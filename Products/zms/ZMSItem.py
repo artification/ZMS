@@ -24,8 +24,8 @@ from Acquisition import Implicit
 import OFS.SimpleItem, OFS.ObjectManager
 import zope.interface
 # Product Imports.
-from . import IZMSDaemon
-from . import standard
+from Products.zms import IZMSDaemon
+from Products.zms import standard
 
 
 ################################################################################
@@ -138,6 +138,13 @@ class ZMSItem(
         request.set( 'manage_tabs_message', self.getConfProperty('ZMS.manage_tabs_message', ''))
       if 'zmi-manage-system' in request.form:
         standard.set_session_value(self,'zmi-manage-system',int(request.get('zmi-manage-system',0)))
+      # manage must not be accessible for Anonymous
+      if request['URL0'].find('/manage') >= 0:
+        lower = self.getUserAttr(request['AUTHENTICATED_USER'],'attrActiveStart','')
+        upper = self.getUserAttr(request['AUTHENTICATED_USER'],'attrActiveEnd','')
+        if not standard.todayInRange(lower, upper) or request['AUTHENTICATED_USER'].has_role('Anonymous'):
+          import zExceptions
+          raise zExceptions.Unauthorized
       # avoid declarative urls
       path_to_handle = request['URL0'][len(request['BASE0']):]
       path = path_to_handle.split('/')

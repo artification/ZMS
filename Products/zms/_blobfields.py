@@ -17,35 +17,32 @@
 ################################################################################
 
 # Imports.
+from __future__ import absolute_import
 from DateTime.DateTime import DateTime
 from ZPublisher import HTTPRangeSupport, HTTPRequest
 from OFS.Image import Image, File
-from io import StringIO
 # from mimetools import choose_boundary
 from email.generator import _make_boundary as choose_boundary
 import base64
 import copy
+import re
+import six
 import time
-import urllib.request, urllib.parse, urllib.error
 import warnings
 import zExceptions 
 # Product Imports.
-from . import standard
-from . import pilutil
-from . import zopeutil
-from . import _fileutil
-from . import _globals
+from Products.zms import _fileutil
+from Products.zms import _globals
+from Products.zms import pilutil
+from Products.zms import standard
+from Products.zms import svgutil
+from Products.zms import zopeutil
 
 __all__= ['MyBlob', 'MyImage', 'MyFile']
 
 # PY3 PATCH
 def rfc1123_date():
  return 'ERROR rfc1123_date()'
-
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-_blobfields.StringType:
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-StringType=type('')
 
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -135,14 +132,13 @@ IN:    clazz        [C{MyImage}|C{MyFile}]
 OUT:    blob        [MyImage|MyFile]
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 def createBlobField(self, objtype, file=b''):
-  if type(file) is bytes:
+  if standard.is_bytes(file):
     blob = uploadBlobField( self, objtype, file)
   elif isinstance(file, dict):
     data = file.get( 'data', '')
-    if type(data) is str:
-      data = bytes(data,'utf-8')
-    if isinstance(data, StringType):
-      data = StringIO( data)
+    if standard.is_str(data):
+      data = standard.pybytes(data,'utf-8')
+      data = standard.PyBytesIO( data)
     blob = uploadBlobField( self, objtype, data, file.get('filename', ''))
     if file.get('content_type'):
       blob.content_type = file.get('content_type')
@@ -160,7 +156,7 @@ def uploadBlobField(self, clazz, file=b'', filename=''):
   except:
     pass
   f = None
-  if type(file) is str:
+  if isinstance(file,six.string_types):
     f = re.findall('^data:(.*?);base64,([\s\S]*)$',file)
   if f:
     mt = f[0][0]
@@ -171,11 +167,12 @@ def uploadBlobField(self, clazz, file=b'', filename=''):
     clazz = MyImage
   elif clazz in [_globals.DT_FILE, 'file']:
     clazz = MyFile
-  blob = clazz( id='', title='', file=bytes('','utf-8'))
+  # blob = clazz( id='', title='', file='')
+  blob = clazz( id='', title='', file=standard.pybytes('','utf-8'))
   blob.update_data(file, content_type=mt, size=len(file))
   blob.aq_parent = self
   blob.mediadbfile = None
-  blob.filename = _fileutil.extractFilename( filename, undoable=True)
+  blob.filename = standard.pystr(_fileutil.extractFilename( filename, undoable=True))
   # Check size.
   if self is not None:
     maxlength_prop = 'ZMS.input.%s.maxlength'%['file','image'][isinstance(blob,MyImage)]
@@ -239,17 +236,7 @@ def thumbnailImage(self, hiresKey, loresKey, maxdim, lang, REQUEST):
   message = ''
   try:
     if hiresKey in self.getObjAttrs() and REQUEST.get('generate_preview_%s_%s'%(hiresKey,lang),0) == 1:
-      req = {'lang':lang,'preview':'preview'}
-      hiresImg = self.getObjProperty(hiresKey,req)
-      loresImg = self.getObjProperty(loresKey,req)
-      if hiresImg is None and loresImg is not None:
-        if loresImg.getWidth() > int(maxdim):
-          hiresImg = loresImg
-      if hiresImg is not None:
-        standard.writeLog( self, '[thumbnailImage]: Create >%s< from >%s<...'%(loresKey,hiresKey))
-        thumb = pilutil.thumbnail( hiresImg, int(maxdim))
-        self.setObjProperty(loresKey,thumb,lang)
-        self.setObjProperty(hiresKey,hiresImg,lang)
+      pilutil.generate_preview(self, hiresKey, loresKey, maxdim)
   except:
     standard.writeError( self, '[thumbnailImage]')
   return message
@@ -268,7 +255,6 @@ class MyBlob(object):
     __doc__ = """ZMS product module."""
     # Version string. 
     __version__ = '0.1' 
-    
 
     __class_name__ = '{{MyBlob}}'
     
@@ -385,7 +371,7 @@ class MyBlob(object):
                     RESPONSE.setStatus(206) # Partial content
 
                     data = self.data
-                    if isinstance(data, StringType):
+                    if isinstance(data,six.string_types):
                         RESPONSE.write(data[start:end])
                         return True
 
@@ -456,7 +442,7 @@ class MyBlob(object):
                             'Content-Range: bytes %d-%d/%d\r\n\r\n' % (
                                 start, end - 1, self.size))
 
-                        if isinstance(data, StringType):
+                        if isinstance(data,six.string_types):
                             RESPONSE.write(data[start:end])
 
                         else:
@@ -673,7 +659,7 @@ class MyBlob(object):
           try:
             data = mediadb.retrieveFile( mediadbfile)
           except:
-            standard.writeError( parent, "[getData]: can't retrieve file from mediadb: %s"%str(mediadbfile))
+            standard.writeError( parent, "[getData]: can't retrieve file from mediadb: %s"%standard.pystr(mediadbfile))
       else:
         data = getattr(self, 'data', '')
       return data
@@ -684,7 +670,7 @@ class MyBlob(object):
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     getDataURI__roles__ = None
     def getDataURI(self):
-      dataURI = 'data:%s;base64,%s'%(self.getContentType(),base64.b64encode(bytes(self.getData())))
+      dataURI = 'data:%s;base64,%s'%(self.getContentType(),base64.b64encode(self.getData()))
       return dataURI
 
 
@@ -729,7 +715,9 @@ class MyBlob(object):
           self.mediadbfile = mediadb.storeFile( self)
           self.data = ''
       # unset parent to avoid TypeError: Can't pickle objects in acquisition wrappers.
-      self.aq_parent = None
+      if parent.getType() != 'ZMSRecordSet':
+        self.aq_parent = None
+
 
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     MyBlob.getMediadbfile: 
@@ -824,7 +812,7 @@ class MyBlob(object):
       @rtype: C{string}
       @deprecated: Use zmscontext.getMimeTypeIconSrc(mt) instead!
       """
-      from . import _mimetypes
+      from Products.zms import _mimetypes
       warnings.warn('Using MyBlob.getMimeTypeIconSrc() is deprecated.'
                    ' Use zmscontext.getMimeTypeIconSrc(mt) instead.',
                      DeprecationWarning, 
@@ -878,20 +866,21 @@ class MyImage(MyBlob, Image):
       data = ''
       objtype = ''
       filename = _fileutil.getOSPath(_fileutil.extractFilename(getattr(self, 'filename', '')))
+      content_type = getattr(self, 'content_type', '')
       if data2hex:
-        if getattr(self, 'content_type', '').find('text/') == 0:
-          data = '<![CDATA[%s]]>'%self.getData( sender).decode()
+        if content_type.startswith('text/') or content_type in ['application/css','application/javascript','image/svg']:
+          data = '<![CDATA[%s]]>'%standard.pystr(self.getData(sender),'utf-8')
         else:
-          data = standard.bin2hex(self.getData( sender)).decode()
+          data = standard.bin2hex(standard.pybytes(self.getData(sender)))
         objtype = ' type="image"'
       else:
         filename = self.getFilename()
         filename = getLangFilename(sender, filename, self.lang)
         filename = '%s%s'%(base_path, filename)
       xml = '\n<data'
-      xml += ' width="%s"'%str(getattr(self, 'width', ''))
-      xml += ' height="%s"'%str(getattr(self, 'height', ''))
-      xml += ' content_type="%s"'%str(getattr(self, 'content_type', ''))
+      xml += ' width="%s"'%standard.pystr(getattr(self, 'width', ''))
+      xml += ' height="%s"'%standard.pystr(getattr(self, 'height', ''))
+      xml += ' content_type="%s"'%content_type
       xml += ' filename="%s"'%filename
       xml += objtype + '>' + data
       xml += '</data>'
@@ -907,6 +896,15 @@ class MyImage(MyBlob, Image):
       """
       w = self.width
       if not w:
+          try:
+            size = svgutil.get_dimensions(self)
+            if size is not None:
+              self.width = int(size[0])
+              self.height = int(size[1])
+            w = self.width
+          except:
+            standard.writeError(self.aq_parent,'can\'t geWidth')
+      if not w:
         w = self.aq_parent.getConfProperty('ZMS.image.default.width', 640)
       return w
 
@@ -919,6 +917,15 @@ class MyImage(MyBlob, Image):
       @rtype: C{int}
       """
       h = self.height
+      if not h:
+          try:
+            size = svgutil.get_dimensions(self)
+            if size is not None:
+              self.width = int(size[0])
+              self.height = int(size[1])
+            h = self.height
+          except:
+            standard.writeError(self.aq_parent,'can\'t getHeight')
       if not h:
         h = self.aq_parent.getConfProperty('ZMS.image.default.height', 400)
       return h
@@ -970,18 +977,19 @@ class MyFile(MyBlob, File):
       data = ''
       objtype = ''
       filename = _fileutil.getOSPath(_fileutil.extractFilename(getattr(self, 'filename', '')))
+      content_type = getattr(self, 'content_type', '')
       if data2hex:
-        if getattr(self, 'content_type', '').find('text/') == 0:
-          data = '<![CDATA[%s]]>'%self.getData( sender).decode()
+        if content_type.startswith('text/') or content_type in ['application/css','application/javascript','image/svg']:
+          data = '<![CDATA[%s]]>'%standard.pystr(self.getData(sender),'utf-8')
         else:
-          data = standard.bin2hex(self.getData( sender)).decode()
+          data = standard.bin2hex(standard.pybytes(self.getData(sender)))
         objtype = ' type="file"'
       else:
         filename = self.getFilename()
         filename = getLangFilename(sender, filename, self.lang)
         filename = '%s%s'%(base_path, filename)
       xml = '\n<data'
-      xml += ' content_type="%s"'%str(getattr(self, 'content_type', ''))
+      xml += ' content_type="%s"'%content_type
       xml += ' filename="%s"'%filename
       xml += objtype + '>' + data
       xml += '</data>'
@@ -1032,7 +1040,7 @@ class MyBlobWrapper(object):
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     getDataURI__roles__ = None
     def getDataURI(self):
-      dataURI = 'data:%s;base64,%s'%(self.getContentType(),base64.b64encode(bytes(self.getData())))
+      dataURI = 'data:%s;base64,%s'%(self.getContentType(),base64.b64encode(self.getData()))
       return dataURI
 
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -1040,6 +1048,6 @@ class MyBlobWrapper(object):
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     __str____roles__ = None
     def __str__(self):
-      return self.getData().decode()
+      return standard.pybytes(self.getData())
 
 ################################################################################

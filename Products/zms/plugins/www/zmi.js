@@ -4,8 +4,9 @@
 ZMI = function() { this.readyFn = []};
 ZMI.prototype.registerReady = function(fn) {this.readyFn.push(fn)};
 ZMI.prototype.ready = function(fn) {this.readyFn.push(fn)};
-ZMI.prototype.runReady = function() {while (this.readyFn.length > 0) this.readyFn.pop()()};
+ZMI.prototype.runReady = function() {this.readyFn.map(x=>x())};
 $ZMI = new ZMI();
+
 /**
  * $: Register 
  */
@@ -18,3 +19,19 @@ if (typeof $ == "undefined") {
 	}
 }
 
+/**
+ * Turbolinks
+ */
+if (typeof Turbolinks != "undefined") {
+	Turbolinks.setProgressBarDelay(0);
+	document.addEventListener("turbolinks:visit", function() {
+		var ts = performance.now();
+		console.log("BO turbolinks:visit " + ts);
+	});
+	document.addEventListener("turbolinks:load", function() {
+		var ts = performance.now();
+		console.log("BO turbolinks:load " + ts);
+		$ZMI.runReady();
+		console.log("EO turbolinks:load " + ts + "->" + (performance.now()-ts) + "msec");
+	});
+}

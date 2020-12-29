@@ -18,24 +18,24 @@
 
 
 # Imports.
-from io import BytesIO
 from distutils.version import LooseVersion
 import ZPublisher.HTTPRequest
 import collections
 import copy
 import os
+import six
 import sys
 import time
 import zExceptions
 import zope.interface
 # Product Imports.
-from . import IZMSRepositoryProvider
-from . import standard
-from . import zopeutil
-from . import _blobfields
-from . import _fileutil
-from . import _globals
-from . import _ziputil
+from Products.zms import IZMSRepositoryProvider
+from Products.zms import standard
+from Products.zms import zopeutil
+from Products.zms import _blobfields
+from Products.zms import _fileutil
+from Products.zms import _globals
+from Products.zms import _ziputil
 
 
 # ------------------------------------------------------------------------------
@@ -53,23 +53,7 @@ def syncZopeMetaobjAttr( self, metaObj, attr):
       for artefact_id in attr_id.split('/')[:-1]:
          container = getattr( container, artefact_id)
       artefact_id = attr['id'].split('/')[-1]
-      artefact = getattr(container, artefact_id, None)
-    if artefact is None and attr['type'] in ['External Method']:
-      class MissingArtefactProxy(object):
-        def __init__(self, id, meta_type):
-          self.id=id
-          self.meta_type=meta_type
-        icon__roles__=None
-        def icon_clazz(self):
-          return {'External Method':'fa fa-external-link-square-alt'}.get(self.meta_type, 'far fa-file-archive')
-        def zmi_icon(self):
-          return icon_clazz(self)
-        def icon(self): # obsolete?
-          return '<i title="%s" class="%s"></i>'%(self.meta_type, zmi_icon(self))
-        absolute_url__roles__=None
-        def absolute_url(self):
-          return '#'
-      artefact = MissingArtefactProxy(attr['id'], attr['type'])
+      artefact = zopeutil.getObject(container, artefact_id, attr.get('type'), attr.get('custom'))
     if artefact is not None:
       attr['ob'] = artefact
   except:
@@ -126,21 +110,23 @@ class ZMSMetaobjManager(object):
     @see IRepositoryProvider
     """
     def provideRepositoryModel(self, r, ids=None):
-      self.writeBlock("[provideRepositoryModel]: ids=%s"%str(ids))
+      standard.writeBlock(self,"[provideRepositoryModel]: ids=%s"%str(ids))
       valid_ids = self.getMetaobjIds()
       if ids is None:
         ids = valid_ids
       for id in [x for x in ids if x in valid_ids]:
         o = self.getMetaobj(id)
         if o and not o.get('acquired', 0):
-          package = o.get('package', '')
           d = copy.deepcopy(o)
-          d['__filename__'] = [[], [package]][len(package)>0]+[id, '__init__.py']
-          for dk in ['acquired']:
-            if dk in d:
-              del d[dk]
-          for attr in d['attrs']:
-            syncZopeMetaobjAttr(self, o, attr)
+          attrs = d.get('attrs',[])
+          package = d.get('package','')
+          mandatory_keys = ['access','enabled','id','name','package','revision','type']
+          for key in list(d):
+            if key not in mandatory_keys:
+              del d[key]
+          d['__filename__'] = [[],[package]][len(package)>0]+[id,'__init__.py']
+          for attr in attrs:
+            syncZopeMetaobjAttr(self, d, attr)
             mandatory_keys = ['id', 'name', 'type', 'meta_type', 'default', 'keys', 'mandatory', 'multilang', 'ob', 'repetitive']
             if attr['type']=='interface':
               attr['name'] = attr['id']
@@ -149,9 +135,7 @@ class ZMSMetaobjManager(object):
             for key in list(attr):
               if not key in mandatory_keys:
                 del attr[key]
-          d['version'] = self.getMetaobjRevision(id)
-          d['Attrs'] = d['attrs']
-          del d['attrs']
+          d['Attrs'] = attrs
           r[id] = d
 
     """
@@ -160,7 +144,7 @@ class ZMSMetaobjManager(object):
     def updateRepositoryModel(self, r):
       id = r['id']
       if not id.startswith('__') and not id.endswith('__'):
-        self.writeBlock("[updateRepositoryModel]: id=%s"%id)
+        standard.writeBlock(self,"[updateRepositoryModel]: id=%s"%id)
         r['attrs'] = r.get('Attrs', [])
         if 'Attrs' in r: del r['Attrs']
         self.delMetaobj(id)
@@ -195,6 +179,7 @@ class ZMSMetaobjManager(object):
     def _importMetaobjXml(self, item, createIfNotExists=1, createIdsFilter=None):
       ids = []
       id = item['key']
+      standard.writeBlock(self,'[ZMSMetaobjManager._importMetaobjXml]: id=%s'%str(id))
       meta_types = list(self.model)
       if (createIfNotExists == 1) and \
          (createIdsFilter is None or (id in createIdsFilter)):
@@ -272,7 +257,6 @@ class ZMSMetaobjManager(object):
           if attr_id not in attr_ids:
             self.setMetaobjAttr( id, None, attr_id, newName, newMandatory, newMultilang, newRepetitive, newType, newKeys, newCustom, newDefault)
             attr_ids.append(attr_id)
-      standard.writeBlock( self, '[ZMSMetaobjManager._importMetaobjXml]: id=%s'%str(id))
       return id
 
     def importMetaobjXml(self, xml, createIfNotExists=1, createIdsFilter=None):
@@ -286,7 +270,7 @@ class ZMSMetaobjManager(object):
         ids.append( id)
       if len( ids) == 1:
         ids = ids[ 0]
-      standard.writeBlock( self, '[ZMSMetaobjManager.importMetaobjXml]: ids=%s'%str(ids))
+      standard.writeBlock(self,'[ZMSMetaobjManager.importMetaobjXml]: ids=%s'%str(ids))
       return ids
 
     def exportMetaobjXml(self, ids, REQUEST=None, RESPONSE=None):
@@ -462,15 +446,17 @@ class ZMSMetaobjManager(object):
     #
     #  Returns list of all meta-ids in model.
     # --------------------------------------------------------------------------
-    def getMetaobjIds(self, sort=False, excl_ids=[]):
+    def getMetaobjIds(self, sort=None, excl_ids=[]):
       obs = self.__get_metaobjs__()
       ids = [obs[x]['id'] for x in obs]
       # exclude ids
       if excl_ids:
         ids = [x for x in ids if x not in excl_ids]
       # sort
-      if sort:
+      if sort == True:
         ids = sorted(ids,key=lambda x:self.display_type(self.REQUEST, x))
+      elif sort == False:
+        ids = sorted(ids,key=lambda x:obs[x].get('name',x))
       return ids
 
 
@@ -619,7 +605,7 @@ class ZMSMetaobjManager(object):
                 keys.append(v)
                 sync_id = meta_id
             if sync_id:
-              self.setMetaobjAttr( meta_id, key, key, attr['name'], attr['mandatory'], attr['multilang'], attr['repetitive'], attr['type'], keys, attr['custom'], attr['default'])
+              self.setMetaobjAttr( meta_id, key, key, attr['name'], attr['mandatory'], attr['multilang'], attr['repetitive'], attr['type'], keys, attr.get('custom',None), attr['default'])
       
       ##### SYNCHRONIZE ####
       if sync_id:
@@ -860,9 +846,12 @@ class ZMSMetaobjManager(object):
         zopeutil.removeObject(self, newObId)
         # Insert Zope-Object.
         if isinstance(newCustom,_blobfields.MyBlob): newCustom = newCustom.getData()
-        if _globals.is_str_type(newCustom): newCustom = newCustom.replace('\r', '')
-        zopeutil.addObject(self, mapTypes[newType], newObId, newName, newCustom)
-        del attr['custom']
+        if standard.is_str(newCustom): newCustom = newCustom.replace('\r', '')
+        try:
+          zopeutil.addObject(self, mapTypes[newType], newObId, newName, newCustom)
+          del attr['custom']
+        except:
+          standard.writeError(self,"can't addObject %s (%s)"%(newObId,newType))
       
       # Replace
       ids = [x['id'] for x in attrs]
@@ -907,12 +896,29 @@ class ZMSMetaobjManager(object):
             zopeutil.removeObject(oldContainer, oldObId)
         # Insert Zope-Object.
         if isinstance(newCustom,_blobfields.MyBlob): newCustom = newCustom.getData()
-        if isinstance(newCustom,str): 
-           newCustom = newCustom.encode('utf-8').replace(b'\r', b'')
-           newCustom = newCustom.decode('utf-8')
-        zopeutil.addObject(container, newType, newObId, newName, newCustom)
-        artefact = zopeutil.getObject(container, newObId)
-        del attr['custom']
+        # Line-breaks.
+        if standard.is_str(newCustom): 
+           newCustom = newCustom.replace('\r', '')
+         # Strip errors.
+        if isinstance(newCustom,six.string_types): 
+           if newCustom.find("## Errors:") >= 0:
+             lines = [x for x in newCustom.split('\n')]
+             remove = False
+             i = 0
+             while lines and lines[i].startswith("##"):
+               if lines[i].startswith("## Errors:"):
+                 remove = True
+               else: 
+                 i += 1
+               if remove:
+                 lines.pop(i)
+             newCustom = '\n'.join(lines)
+        try:
+          newOb = zopeutil.addObject(container, newType, newObId, newName, newCustom)
+          if newOb is not None:
+            del attr['custom']
+        except:
+          attr['custom'] = "## Errors:\n" + "##  " + standard.writeError(self,"") + "\n" + "##\n" + newCustom
         # Change Zope-Object (special).
         newOb = zopeutil.getObject(container, newObId)
         if newType == 'Folder':
@@ -1046,7 +1052,7 @@ class ZMSMetaobjManager(object):
           # Delete.
           # -------
           # Delete Object.
-          if key == 'obj' and btn == self.getZMILangStr('BTN_DELETE'):
+          if btn == 'BTN_DELETE' and key == 'obj':
             if id:
               meta_ids = [id]
             else:
@@ -1064,13 +1070,13 @@ class ZMSMetaobjManager(object):
             id = ''
             message = self.getZMILangStr('MSG_DELETED')%len(meta_ids)
           # Delete Attribute.
-          elif key == 'attr' and btn == 'delete':
+          elif btn == 'BTN_DELETE' and key == 'attr':
             attr_id = REQUEST['attr_id']
             self.delMetaobjAttr( id, attr_id)
           
           # Change.
           # -------
-          elif key == 'all' and btn == self.getZMILangStr('BTN_SAVE'):
+          elif key == 'all' and btn == 'BTN_SAVE':
             savedAttrs = copy.copy(self.getMetaobj(id)['attrs'])
             # Change object.
             newValue = {}
@@ -1131,7 +1137,7 @@ class ZMSMetaobjManager(object):
             if (len(attr_id) > 0 and len(newName) > 0 and len(newType) > 0) or newType in self.getMetadictAttrs():
               message += self.setMetaobjAttr( id, None, attr_id, newName, newMandatory, newMultilang, newRepetitive, newType, newKeys, newCustom, newDefault)
               message += self.getZMILangStr('MSG_INSERTED')%attr_id
-          elif key == 'obj' and btn == self.getZMILangStr('BTN_SAVE'):
+          elif key == 'obj' and btn == 'BTN_SAVE':
             # Change Acquired-Object.
             subobjects = REQUEST.get('obj_subobjects', 0)
             self.acquireMetaobj( id, subobjects)
@@ -1140,7 +1146,7 @@ class ZMSMetaobjManager(object):
           
           # Copy.
           # -----
-          elif btn == self.getZMILangStr('BTN_COPY'):
+          elif btn == 'BTN_COPY':
             metaOb = self.getMetaobj(id)
             if metaOb.get('acquired', 0) == 1:
               package = metaOb.get('package', '')
@@ -1155,13 +1161,13 @@ class ZMSMetaobjManager(object):
           
           # Export.
           # -------
-          elif btn == self.getZMILangStr('BTN_EXPORT'):
+          elif btn == 'BTN_EXPORT':
             ids = REQUEST.get('ids', [])
             return self.exportMetaobjXml(ids, REQUEST, RESPONSE)
           
           # Insert.
           # -------
-          elif btn == self.getZMILangStr('BTN_INSERT'):
+          elif btn == 'BTN_INSERT':
             # Insert Object.
             if key == 'obj':
               id = REQUEST['_meta_id'].strip()
@@ -1205,7 +1211,7 @@ class ZMSMetaobjManager(object):
           
           # Acquire.
           # --------
-          elif btn == self.getZMILangStr('BTN_ACQUIRE'):
+          elif btn == 'BTN_ACQUIRE':
             immediately = REQUEST.get('immediately', 0)
             overwrite = []
             ids = REQUEST.get('aq_ids', [])
@@ -1224,7 +1230,7 @@ class ZMSMetaobjManager(object):
           
           # Import.
           # -------
-          elif btn == self.getZMILangStr('BTN_IMPORT'):
+          elif btn == 'BTN_IMPORT':
             immediately = False
             xmlfile = None
             temp_folder = getattr(self,'temp_folder',None)
@@ -1252,14 +1258,15 @@ class ZMSMetaobjManager(object):
                  for name in zip_buffer.namelist():
                    if name.endswith(".xml"):
                      filename = name
-                     xmlfile = BytesIO(zip_buffer.read(filename))
+                     xmlfile = standard.PyBytesIO(zip_buffer.read(filename))
                      break
               # parse xml
               if not immediately:
                 xml = xmlfile.read()
                 # open string-io.
-                xmlfile = BytesIO(xml)
+                xmlfile = standard.PyBytesIO(xml)
                 v = standard.parseXmlString(xmlfile)
+                xmlfile = standard.PyBytesIO(xml)
                 if not isinstance(v,list):
                   v = []
                 if temp_id in temp_folder.objectIds():

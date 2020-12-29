@@ -27,14 +27,16 @@ function onExportFormatChange(el) {
 </script>
 
 <tal:block 
-	tal:define="global
-		filterIds python:here.getFilterIds();
-		filters python:[x for x in [here.getFilter(x) for x in filterIds] 
+	tal:on-error="structure python:'<div class=\042alert alert-danger\042>ERROR Missing ZMS User Roles or Filter Misconfiguration</div>'"
+	tal:define="
+		filter_manager python:here.getFilterManager();
+		filterIds python:filter_manager.getFilterIds();
+		filters python:[x for x in [filter_manager.getFilter(x) for x in filterIds] 
 				if here.meta_id in x['meta_types']
-				and (request['AUTHENTICATED_USER'].has_role('Manager') or len(here.intersection_list(here.getUserRoles(request['AUTHENTICATED_USER']),x.get('roles',[])))>0)
+				and (request['AUTHENTICATED_USER'].has_role('Manager') or len(standard.intersection_list(here.getUserRoles(request['AUTHENTICATED_USER']),x.get('roles',[])))>0)
 				];
-		importFilters python:[x for x in filters if len(here.intersection_list([x['format']],['import'])) > 0];
-		exportFilters python:[x for x in filters if len(here.intersection_list([x['format']],['export','XML','XHTML','myXML'])) > 0]">
+		importFilters python:[x for x in filters if len(standard.intersection_list([x['format']],['import'])) > 0];
+		exportFilters python:[x for x in filters if len(standard.intersection_list([x['format']],['export','XML','XHTML','myXML'])) > 0]">
 
 <form class="form-horizontal card" name="importForm" action="manage_import" method="post" enctype="multipart/form-data">
 	<input type="hidden" name="lang" tal:attributes="value request/lang" />
@@ -122,7 +124,7 @@ function onExportFormatChange(el) {
 		<div class="form-group row">
 			<div class="col-md-2">&nbsp;</div>
 			<div class="col-md-10">
-				<button type="submit" class="btn btn-primary" tal:content="python:here.getZMILangStr('BTN_EXPORT')">Import</button>
+				<button type="submit" class="btn btn-primary" tal:content="python:here.getZMILangStr('BTN_EXPORT')">Export</button>
 			</div>
 		</div>
 	</div>

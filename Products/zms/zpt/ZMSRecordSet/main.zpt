@@ -1,6 +1,6 @@
 <!-- ZMSRecordSet/main -->
 
-<div class="ZMSRecordSet main"  tal:define="global
+<div class="ZMSRecordSet main" tal:define="global
 		standard modules/Products/zms/standard;
 		meta_id options/meta_id;
 		metaObj python:here.getMetaobj(meta_id);
@@ -50,9 +50,8 @@
 		</div><!-- .collapse -->
 
 		<div class="card-header filters clearfix btn-collapse">
-			<a class="btn card-toggle pull-left" data-toggle="collapse" href="#attrProperties">
+			<a class="btn card-toggle pull-left col-sm-2 col-lg-2" data-toggle="collapse" href="#attrProperties">
 				<i class="fas fa-caret-down"></i>
-				<i class="fas fa-filter"></i>
 				<tal:block tal:content="structure python:here.getZMILangStr('ATTR_FILTER')">the label</tal:block>
 			</a>
 			<input type="hidden" id="qfilters" name="qfilters:int" tal:attributes="value request/qfilters" />
@@ -83,11 +82,11 @@
 					</div><!-- .form-row -->
 				</tal:block>
 				<div class="form-row">
-					<button type="submit" id="btn-search" class="btn btn-primary" name="btn" tal:attributes="value python:here.getZMILangStr('BTN_REFRESH')">
+					<button type="submit" id="btn-search" class="btn btn-primary" name="btn" value="BTN_REFRESH">
 						<i class="fas fa-search"></i>
 						<tal:block tal:content="python:here.getZMILangStr('BTN_SEARCH')">Search</tal:block>
 					</button>
-					<button type="submit" id="btn-reset" class="btn btn-secondary" name="btn" tal:attributes="value python:here.getZMILangStr('BTN_RESET')">
+					<button type="submit" id="btn-reset" class="btn btn-secondary" name="btn" value="BTN_RESET">
 						<tal:block tal:content="python:here.getZMILangStr('BTN_RESET')">Reset</tal:block>
 					</button>
 				</div><!-- .form-row -->

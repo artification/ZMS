@@ -8,7 +8,7 @@ function zmiSelectObject(sender) {
 	uid = uid.substr(0,uid.lastIndexOf('}'))+(typeof selectedLang=='undefined' || selectedLang==''?'':';lang='+selectedLang)+"}";
 	var href = $(sender).attr('href');
 	var titlealt = $(sender).attr('data-page-titlealt');
-	$ZMI.writeDebug('zmiSelectObject: uid='+uid+'\nhref='+href+'\ntitlealt='+titlealt);
+	console.log('zmiSelectObject: uid='+uid+'\nhref='+href+'\ntitlealt='+titlealt);
 	var fm;
 	var fmName = zmiParams['fmName']; 
 	var elName = zmiParams['elName']; 
@@ -29,7 +29,7 @@ function zmiSelectObject(sender) {
  */
 function selectUrl(href) {
 	var titlealt = '';
-	$ZMI.writeDebug('selectUrl: href='+href+'\ntitlealt='+titlealt);
+	console.log('selectUrl: href='+href+'\ntitlealt='+titlealt);
 	var fm;
 	var fmName = zmiParams['fmName']; 
 	var elName = zmiParams['elName']; 
@@ -59,6 +59,32 @@ $(function(){
 	if (typeof href == "undefined" || href == "") {
 		href = $ZMI.getPhysicalPath();
 	}
+	// filter
+	var t = null;
+	var search_results = $("#search_results").html();
+	var applyListFilter = function() {
+			var filter = $('input.filter').val().trim();
+			var v = filter;
+			if (v.length == 0) {
+				$("#search_results").html(search_results).hide();
+				$(".zmi-sitemap").show();
+			}
+			else {
+				$("#search_results").html(search_results).show();
+				$(".zmi-sitemap").hide();
+				var pageSize = 10;
+				var pageIndex = parseInt(GetURLParameter('pageIndex:int','0'));
+				zmiBodyContentSearch(v,pageSize,pageIndex);
+			}
+		};
+	$('input.filter').keyup(function(e) {
+		var that = this;
+		if (t != null) {
+			clearTimeout(t);
+		}
+		t = setTimeout(applyListFilter, 500);
+	});
+	// sitemap
 	$ZMI.objectTree.init(".zmi-sitemap",href,{});
 });
 
@@ -103,6 +129,7 @@ var URLParser = (function (document) {
 
 function zmiBodyContentSearchDone() {
 	$("#search_results h4:first").hide();
+	$(".zmi-filter .badge.badge-pill.badge-info").text($(".line.row").length);
 	$(".line.row").each(function() {
 			var $h2 = $("h2",this);
 			var meta_id = $("h2").attr("class");

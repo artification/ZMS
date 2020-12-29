@@ -24,17 +24,16 @@ import inspect
 import os
 import re
 import time
-import urllib.request, urllib.parse, urllib.error
 from zope.interface import implementer, providedBy
 # Product Imports.
-from . import IZMSConfigurationProvider
-from . import IZMSDaemon
-from . import IZMSRepositoryManager
-from . import IZMSRepositoryProvider
-from . import ZMSItem
-from . import _fileutil
-from . import standard
-from . import zopeutil
+from Products.zms import IZMSConfigurationProvider
+from Products.zms import IZMSDaemon
+from Products.zms import IZMSRepositoryManager
+from Products.zms import IZMSRepositoryProvider
+from Products.zms import ZMSItem
+from Products.zms import _fileutil
+from Products.zms import standard
+from Products.zms import zopeutil
 
 
 def get_class(py):
@@ -273,10 +272,9 @@ class ZMSRepositoryManager(
         keys = sorted([x for x in o if not x.startswith('__') and x not in e])
         for k in keys:
           v = o.get(k)
-          if v:
-            py.append('\t# %s'%k.capitalize())
-            py.append('\t%s = %s'%(standard.id_quote(k), standard.str_json(v, encoding="utf-8", formatted=True, level=2, allow_booleans=False)))
-            py.append('')
+          py.append('\t# %s'%k.capitalize())
+          py.append('\t%s = %s'%(standard.id_quote(k), standard.str_json(v, encoding="utf-8", formatted=True, level=2, allow_booleans=False)))
+          py.append('')
         for k in e:
           v = o.get(k)
           if v and isinstance(v, list):
@@ -288,19 +286,27 @@ class ZMSRepositoryManager(
                 if ob is not None:
                   fileexts = {'DTML Method':'.dtml', 'DTML Document':'.dtml', 'External Method':'.py', 'Page Template':'.zpt', 'Script (Python)':'.py', 'Z SQL Method':'.zsql'}
                   fileprefix = i['id'].split('/')[-1]
-                  data = zopeutil.readData(ob) 
+                  data = zopeutil.readData(ob)
+                  version = ''
+                  if hasattr(ob,'_p_mtime'):
+                    version = standard.getLangFmtDate(DateTime(ob._p_mtime).timeTime(), 'eng')
                   d = {}
                   d['id'] = id
                   d['filename'] = os.path.sep.join(filename[:-1]+['%s%s'%(fileprefix, fileexts.get(ob.meta_type, ''))])
                   d['data'] = data
-                  d['version'] = self.getLangFmtDate(DateTime(ob._p_mtime).timeTime(), 'eng')
+                  d['version'] = version
                   d['meta_type'] = ob.meta_type
                   l[d['filename']] = d
                 if 'ob' in i:
                   del i['ob']
-                py.append('\t\t%s = %s'%(self.id_quote(i['id']), standard.str_json(i, encoding="utf-8", formatted=True, level=3, allow_booleans=False)))
+                try:
+                  py.append('\t\t%s = %s'%(self.id_quote(i['id']), standard.str_json(i, encoding="utf-8", formatted=True, level=3, allow_booleans=False)))
+                except:
+                  py.append('\t\t# ERROR: '+standard.writeError(self,'can\'t localFiles \'%s\''%i['id']))
                 py.append('')
         d = {}
+        d['__icon__'] = o.get('__icon__')
+        d['__description__'] = o.get('__description__')
         d['id'] = id
         d['filename'] = os.path.sep.join(filename)
         d['data'] = '\n'.join(py)

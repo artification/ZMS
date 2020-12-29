@@ -22,11 +22,10 @@ import copy
 import logging
 import os
 import time
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import standard
-from . import ZMSItem
-from . import _fileutil
+from Products.zms import standard
+from Products.zms import ZMSItem
+from Products.zms import _fileutil
 
 
 def severity_string(severity, mapping={
@@ -116,7 +115,7 @@ class ZMSLog(ZMSItem.ZMSItem):
     # --------------------------------------------------------------------------
     def getLOG(self, REQUEST, RESPONSE=None):
       """ ZMSLog.getLOG """
-      filename = os.path.join(standard.getINSTANCE_HOME(),'var','log','event.log')
+      filename = os.path.join(standard.getINSTANCE_HOME(),'log','event.log')
       RESPONSE.setHeader( 'Content-Type','text/plain')
       RESPONSE.setHeader( 'Content-Disposition','inline;filename="%s"'%_fileutil.extractFilename( filename))
       file = open( filename, 'r')
@@ -128,7 +127,7 @@ class ZMSLog(ZMSItem.ZMSItem):
     #  ZMSLog.tail_event_log:
     # --------------------------------------------------------------------------
     def tail_event_log(self, linesback=100, returnlist=True):
-      filename = os.path.join(standard.getINSTANCE_HOME(),'var','log','event.log')
+      filename = os.path.join(standard.getINSTANCE_HOME(),'log','event.log')
       return _fileutil.tail_lines(filename,linesback,returnlist)
 
 

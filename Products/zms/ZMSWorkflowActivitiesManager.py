@@ -19,11 +19,10 @@
 # Imports.
 import ZPublisher.HTTPRequest
 import copy
-import urllib.request, urllib.parse, urllib.error
 # Product Imports.
-from . import IZMSRepositoryProvider
-from . import standard
-from . import _blobfields
+from Products.zms import IZMSRepositoryProvider
+from Products.zms import standard
+from Products.zms import _blobfields
 
 
 ################################################################################
@@ -173,12 +172,12 @@ class ZMSWorkflowActivitiesManager(object):
     
     # Cancel.
     # -------
-    if btn in [ self.getZMILangStr('BTN_CANCEL'), self.getZMILangStr('BTN_BACK')]:
+    if btn in [ 'BTN_CANCEL', 'BTN_BACK']:
       id = ''
     
     # Change.
     # -------
-    if btn == self.getZMILangStr('BTN_SAVE'):
+    if btn == 'BTN_SAVE':
       item = self.getActivity(id, for_export=True)
       newId = REQUEST.get('inpId').strip()
       newName = REQUEST.get('inpName').strip()
@@ -196,13 +195,13 @@ class ZMSWorkflowActivitiesManager(object):
     
     # Delete.
     # -------
-    elif btn in ['delete', self.getZMILangStr('BTN_DELETE')]:
+    elif btn == 'BTN_DELETE':
       id = self.delItem(id, 'activities')
       message = self.getZMILangStr('MSG_CHANGED')
     
     # Insert.
     # -------
-    elif btn == self.getZMILangStr('BTN_INSERT'):
+    elif btn == 'BTN_INSERT':
       item = {}
       newId = REQUEST.get('newId').strip()
       newName = REQUEST.get('newName').strip()
@@ -227,7 +226,7 @@ class ZMSWorkflowActivitiesManager(object):
       id = ''
     
     # Return with message.
-    message = urllib.parse.quote(message)
+    message = standard.url_quote(message)
     return RESPONSE.redirect('manage_main?lang=%s&manage_tabs_message=%s'%(lang, message))
 
 ################################################################################
