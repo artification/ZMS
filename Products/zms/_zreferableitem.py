@@ -332,7 +332,7 @@ class ZReferableItem(object):
       p = pq[0]
       q = pq[1]
       r = re.compile(p)
-      for f in r.findall(standard.pybytes(text)):
+      for f in r.findall(text):
         d = dict(re.findall('\\s(.*?)="(.*?)"', f))
         if 'data-id' in d:
           old = p.replace('(.*?)', f)
