@@ -6,7 +6,7 @@
 # https://raw.githubusercontent.com/zms-publishing/zms4/master/requirements-dev.txt
 
 wheel
-Zope[wsgi]
+Zope
 docutils
 configparser
 Products.GenericSetup
