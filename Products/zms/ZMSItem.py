@@ -26,6 +26,7 @@ import zope.interface
 # Product Imports.
 from Products.zms import IZMSDaemon
 from Products.zms import standard
+from Products.zms import _accessmanager
 
 
 ################################################################################
@@ -49,14 +50,11 @@ class ZMSItem(
     
     # Management Permissions.
     # -----------------------
-    __authorPermissions__ = (
-      'manage_page_header', 'manage_page_footer', 'manage_tabs', 'manage_main_iframe' 
-      )
     __viewPermissions__ = (
-      'manage_menu',
+        'manage_page_header', 'manage_page_footer', 'manage_tabs',
+        'manage', 'manage_main', 'manage_workspace', 'manage_menu',
       )
     __ac_permissions__=(
-      ('ZMS Author', __authorPermissions__),
       ('View', __viewPermissions__),
       )
 
@@ -65,7 +63,6 @@ class ZMSItem(
     manage = PageTemplateFile('zpt/object/manage', globals())
     manage_workspace = PageTemplateFile('zpt/object/manage', globals())
     manage_main = PageTemplateFile('zpt/ZMSObject/manage_main', globals())
-    manage_main_iframe = PageTemplateFile('zpt/ZMSObject/manage_main_iframe', globals())
 
     # --------------------------------------------------------------------------
     #  ZMSItem.zmi_body_content:
@@ -87,7 +84,9 @@ class ZMSItem(
     def zmi_body_class(self, *args, **kwargs):
       request = self.REQUEST
       l = ['zmi','zms', 'loading']
-      l.append(request['lang'])
+      l.append(request.get('lang'))
+      l.append('lang-%s'%(request.get('lang')))
+      l.append('manage_lang-%s'%(request.get('manage_lang')))
       l.extend(kwargs.values())
       l.append(self.meta_id)
       # FOR EVALUATION: adding node specific css classes [list]
@@ -95,6 +94,8 @@ class ZMSItem(
       if isinstance(internal_dict, dict) and internal_dict.get('css_classes', None):
         l.extend( internal_dict['css_classes'] )
       l.extend(self.getUserRoles(request['AUTHENTICATED_USER']))
+      # Additionally configured css classes [string]
+      l.append(self.getConfProperty('ZMS.added.zmi.body_class',''))
       return ' '.join(l)
 
     # --------------------------------------------------------------------------
@@ -138,13 +139,8 @@ class ZMSItem(
         request.set( 'manage_tabs_message', self.getConfProperty('ZMS.manage_tabs_message', ''))
       if 'zmi-manage-system' in request.form:
         standard.set_session_value(self,'zmi-manage-system',int(request.get('zmi-manage-system',0)))
-      # manage must not be accessible for Anonymous
-      if request['URL0'].find('/manage') >= 0:
-        lower = self.getUserAttr(request['AUTHENTICATED_USER'],'attrActiveStart','')
-        upper = self.getUserAttr(request['AUTHENTICATED_USER'],'attrActiveEnd','')
-        if not standard.todayInRange(lower, upper) or request['AUTHENTICATED_USER'].has_role('Anonymous'):
-          import zExceptions
-          raise zExceptions.Unauthorized
+      # AccessableObject
+      _accessmanager.AccessableObject.zmi_page_request(self, args, kwargs)
       # avoid declarative urls
       path_to_handle = request['URL0'][len(request['BASE0']):]
       path = path_to_handle.split('/')

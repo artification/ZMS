@@ -22,27 +22,9 @@
 # Imports.
 from Products.PageTemplates.Expressions import SecureModuleImporter
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
-import six
 import sys
-
-# MD5
-import AccessControl
-import hashlib
-
-class MD5DigestScheme(object):
-
-  def encrypt(self, pw):
-    enc = hashlib.md5(pw)
-    enc = enc.hexdigest()
-    return enc
-
-  def validate(self, reference, attempt):
-    compare = self.encrypt(attempt)[:-1]
-    return (compare == reference)
-
-import AccessControl.AuthEncoding
-AccessControl.AuthEncoding.registerScheme('MD5', MD5DigestScheme())
-
+import time
+from Products.zms import standard
 
 # Umlauts
 umlaut_map = {
@@ -123,13 +105,18 @@ umlaut_map = {
         u'Я': 'JA',}
 
 def sort_item( i):
-  if isinstance(i, bytes):
-    i = i.decode('utf-8')
-  if isinstance(i, str):
-    mapping = umlaut_map
-    for key in mapping.keys():
-      try: i = i.replace(key, mapping[key])
-      except: pass
+  if isinstance(i, time.struct_time):
+    i = time.strftime('%Y%m%d%H%M%S',i)
+  elif isinstance(i, float):
+    pass
+  elif i is None or i == '':
+    i = 0
+  elif not isinstance(i, int):
+      i = standard.pystr(i)
+      mapping = umlaut_map
+      for key in mapping:
+          try: i = i.replace(key, mapping[key])
+          except: pass
   return i
 
 
@@ -188,16 +175,6 @@ def datatype_key(datatype):
     return DT_UNKNOWN
 
 
-def is_str_type(v):
-  """
-  Is str type.
-  @param
-  @return
-  @rtype: C(Boolean)
-  """
-  return isinstance(v, bytes) or isinstance(v, str)
-
-
 def get_size(v):
   """
   Returns size of given object v in bytes.
@@ -236,19 +213,7 @@ class StaticPageTemplateFile(PageTemplateFile):
 ################################################################################
 # Define MyClass.
 ################################################################################
-if six.PY2:
-  # class MyClass:
-  # class MyClass(object):
-  class MyClass:
-
-    # ----------------------------------------------------------------------------
-    #  MyClass.keys:
-    # ----------------------------------------------------------------------------
-    def keys(self):
-      return self.__dict__.keys()
-
-if six.PY3:
-  class MyClass(object):
+class MyClass(object):
   
     # ----------------------------------------------------------------------------
     #  MyClass.keys:

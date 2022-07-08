@@ -144,7 +144,7 @@ class VersionItem(object):
             change_history = []
             record = {}
             record[ 'version_dt'] = standard.getDateTime( time.time())
-            record[ 'version_uid'] = standard.pystr( REQUEST.get( 'AUTHENTICATED_USER'))
+            record[ 'version_uid'] = str( REQUEST.get( 'AUTHENTICATED_USER'))
             record[ 'master_version'] = master_version
             record[ 'major_version'] = 0
             change_history.append( record)
@@ -465,9 +465,6 @@ class VersionItem(object):
       lang = REQUEST['lang']
       for langId in [lang]+self.getDescendantLanguages(lang):
         self.setObjState(obj_state, langId)
-      
-      ##### Trigger custom onCreateObj-Event (if there is one) ####
-      standard.triggerEvent( self, 'onCreateObjEvt')
 
     # --------------------------------------------------------------------------
     #  VersionItem.setObjStateModified
@@ -720,7 +717,7 @@ class VersionItem(object):
           self.version_work_id = None
           if len( ids) > 0:
             standard.writeLog( self, "[_rollbackObjChanges]: Remove work-version: ids=%s"%str(ids))
-          self.manage_delObjects( ids=ids)
+            self.manage_delObjects( ids=ids)
         elif self.version_work_id in attrCntnrIds:
           self.version_live_id = self.version_work_id
           self.version_work_id = None
@@ -1308,7 +1305,7 @@ class VersionManagerContainer(object):
               change_history.append( record)
             record = {}
             record[ 'version_dt'] = standard.getDateTime( time.time())
-            record[ 'version_uid'] = standard.pystr( REQUEST.get( 'AUTHENTICATED_USER', None))
+            record[ 'version_uid'] = str( REQUEST.get( 'AUTHENTICATED_USER', None))
             record[ 'master_version'] = self.getObjProperty( 'master_version', REQUEST)
             record[ 'major_version'] = self.getObjProperty( 'major_version', REQUEST) + 1
             change_history.append( record)

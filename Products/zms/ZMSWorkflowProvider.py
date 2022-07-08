@@ -176,7 +176,7 @@ class ZMSWorkflowProvider(
     @see IRepositoryProvider
     """
     def provideRepository(self, r, ids=None):
-      self.writeBlock("[provideRepository]: ids=%s"%str(ids))
+      standard.writeBlock(self, "[provideRepository]: ids=%s"%str(ids))
       r = {}
       id = 'workflow'
       d = {'id':id,'revision':self.getRevision(),'__filename__':['__init__.py']}
@@ -199,7 +199,7 @@ class ZMSWorkflowProvider(
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     ZMSWorkflowProvider.importXml
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-    def importXml(self, xml, createIfNotExists=1):
+    def importXml(self, xml):
       ids = [self.activities[x*2] for x in range(len(self.activities)//2)]
       for id in ids:
         self.delItem(id, 'activities')

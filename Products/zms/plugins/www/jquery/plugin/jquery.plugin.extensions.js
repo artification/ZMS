@@ -15,12 +15,12 @@ function zmiAutocomplete(s, o) {
 			var prev_el = $(s).autocomplete(o).prev()[0];
 			if ( $(prev_el).attr('class')!='input-group-prepend' ) {
 				$(s).autocomplete(o).before('<div class="input-group-prepend"><span class="input-group-text"><i class="fas fa-search"></i></span></div>');
-				$(s).closest('.col-sm-10,td').wrapInner('<div class="input-group"></div>');
+				$(s).closest('.col-sm-10,td,.col-sm-9.col-md-10').wrapInner('<div class="input-group"></div>');
 			}
 		} catch (error) {
 			console.error(error);
 			$(s).autocomplete(o).before('<div class="input-group-prepend"><span class="input-group-text"><i class="fas fa-search"></i></span></div>');
-			$(s).closest('.col-sm-10,td').wrapInner('<div class="input-group"></div>');
+			$(s).closest('.col-sm-10,td,.col-sm-9.col-md-10').wrapInner('<div class="input-group"></div>');
 		}
 	});
 }
@@ -29,17 +29,6 @@ function zmiAutocomplete(s, o) {
 /**
  * ZMSLightbox
  */
-$(function(){
-	$('a.zmslightbox,a.fancybox')
-		.each(function() {
-				var $img = $("img",$(this));
-				$img.attr("data-hiresimg",$(this).attr("href"));
-				$(this).click(function() {
-						return showFancybox($img);
-					});
-			});
-});
-
 function pluginFancybox(s, c) {
 	$.plugin('zmslightbox',{
 		files: ['/++resource++zms_/jquery/zmslightbox/zmslightbox.js',
@@ -86,11 +75,13 @@ function pluginSortable(s, c) {
  * jquery-cropper - the jQuery Image Cropping Plugin
  * @see https://github.com/fengyuanchen/jquery-cropper/
  */
-function runPluginCropper(s,c) {
+function runPluginCropper(c) {
 	$.plugin('cropper',{
-		files: ['/++resource++zms_/jquery/cropper/cropper.min.js',
-				'/++resource++zms_/jquery/cropper/cropper.css',
-				'/++resource++zms_/jquery/cropper/jquery-cropper.min.js']
-		});
-	$.plugin('cropper').get(s,c);
+		files: [
+			'/++resource++zms_/jquery/cropper/cropper.css',
+			'/++resource++zms_/jquery/cropper/cropper.min.js',
+			'/++resource++zms_/jquery/cropper/jquery-cropper.min.js'
+		]
+	});
+	$.plugin('cropper').get('body',c);
 }

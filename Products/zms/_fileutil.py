@@ -23,11 +23,13 @@ import fnmatch
 import io
 import os
 import shutil
-import six
 import sys
 import tempfile
 import zipfile
 import zope.contenttype
+# Product Imports.
+from Products.zms import _blobfields
+from Products.zms import zopeutil
 
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -100,7 +102,7 @@ _fileutil.getOSPath:
 Return path with OS separators.
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 def getOSPath(path, chs=list(range(32))+[34, 39, 60, 62, 63, 127], undoable=False):
-  if type(path) is bytes:
+  if isinstance(path, bytes):
     path = path.decode('utf-8')
   path = path.replace('\\', os.sep)
   path = path.replace('/', os.sep)
@@ -302,7 +304,7 @@ def executeCommand(path, command):
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 _fileutil.exportObj:
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
-def exportObj(obj, filename, filetype='b'):
+def exportObj(obj, filename):
   
   #-- Try to create directory-tree.
   filename = getOSPath(filename)
@@ -311,39 +313,34 @@ def exportObj(obj, filename, filetype='b'):
   
   #-- Get object data.
   data = None
-  try: # ImageFile
-    f = open(obj.path,'r%s'%filetype)
-    data = f.read()
-    f.close()
-  except:
-    try: # Image / File
-      data = obj.data
-      if len(data) == 0:
-        data = obj.getData()
-    except: 
+  # MyBlob
+  if isinstance(obj, _blobfields.MyBlob):
+    data = obj.getData()
+  elif getattr(obj, 'meta_type',None) is not None:
+    data = zopeutil.readData(obj)
+  else:
+    try: # ImageFile
+      f = open(obj.path,'rb')
+      data = f.read()
+      f.close()
+    except:
       try:
-        data = obj.raw # DTML Method
+        # data,io.RawIOBase
+        data = obj.read()
       except:
-        try:
-          data = obj.read() # REQUEST.enctype multipart/form-data
-        except:
-          data = str(obj)
+        data = obj
     
   #-- Save to file.
   if data is not None:
-    objfile = open(filename, 'w%s'%filetype)
-    if isinstance(data, six.string_types):
-      from Products.zms import standard
-      objfile.write(standard.six_ensure_binary(data))
-    elif isinstance(data, six.binary_type):
-      objfile.write(data)
-    elif isinstance(data,io.RawIOBase):
-      objfile.write(data.read())
-    else:
-      while data is not None:
-        objfile.write(data.data)
-        data=data.next
+    objfile = open(filename, 'wb')
+    if isinstance(data, str):
+      try:
+        data = data.encode("utf-8")
+      except:
+        pass
+    objfile.write(bytes(data))
     objfile.close()
+  return data
 
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""

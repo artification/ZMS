@@ -50,41 +50,6 @@ def updateVersion(root):
       root.setConfProperty('ZMS.catalog.build', 2)
 
 
-# ------------------------------------------------------------------------------
-#  remove_tags:
-# ------------------------------------------------------------------------------
-def remove_tags(self, s):
-  d = {
-    '&ndash;':'-',
-    '&middot;': '.',
-    '&nbsp;': ' ',
-    '&ldquo;': '',
-    '&sect;': '',
-    '&Auml;': u'Ä',
-    '&Ouml;': u'Ö',
-    '&Uuml;': u'Ü',
-    '&auml;': u'ä',
-    '&ouml;': u'ö',
-    '&uuml;': u'ü',
-    '&szlig;': u'ß'}
-  s = standard.pystr(s)
-  for x in d:
-    s = s.replace(x,d[x])
-  s = standard.re_sub('<script(.*?)>(.|\\n|\\r|\\t)*?</script>', ' ', s)
-  s = standard.re_sub('<style(.*?)>(.|\\n|\\r|\\t)*?</style>', ' ', s)
-  s = standard.re_sub('<[^>]*>', ' ', s)
-  while s.find('\t') >= 0:
-    s = s.replace('\t', ' ')
-  while s.find('\n') >= 0:
-    s = s.replace('\n', ' ')
-  while s.find('\r') >= 0:
-    s = s.replace('\r', ' ')
-  while s.find('  ') >= 0:
-    s = s.replace('  ', ' ')
-  s = s.strip()
-  return s
-
-
 ################################################################################
 ################################################################################
 ###
@@ -139,6 +104,16 @@ class ZMSZCatalogAdapter(ZMSItem.ZMSItem):
     ############################################################################
     def __init__(self):
       self.id = 'zcatalog_adapter'
+
+
+    ############################################################################
+    #  Initialize 
+    ############################################################################
+    def initialize(self):
+      self.setIds(['ZMSFolder', 'ZMSDocument', 'ZMSFile'])
+      self.setAttrIds(['title', 'titlealt', 'attr_dc_description', 'standard_html'])
+      # FIXME ImportError: No module named 'ZMSZCatalogConnector'
+      #self.addConnector('ZMSZCatalogConnector')
 
 
     # --------------------------------------------------------------------------
@@ -305,15 +280,15 @@ class ZMSZCatalogAdapter(ZMSItem.ZMSItem):
           try:
             value = node.attr(attr_id)
           except:
-            msg = '[@%s.get_sitemap]: can\'t get attr \'%s.%s\' - see error-log for details'%(node.getHome().id, node.meta_id, attr_id)
+            msg = '[@%s.get_sitemap]: can\'t get attr \'%s.%s\' - see error-log for details'%('/'.join(node.getPhysicalPath()), node.meta_id, attr_id)
             standard.writeError(self, msg)
             if msg not in result:
               result.append(msg)
           if attr_type in ['date', 'datetime']:
             value = self.getLangFmtDate(value, 'eng', 'ISO8601')
-          if type(value) in [str, str]:
-            value = str(value)
-          d[attr_id] = remove_tags(self, value)
+          elif type(value) in (dict, list):
+            value = standard.str_item(value,f=True)  
+          d[attr_id] = standard.remove_tags(value)
         cb(node, d)
 
       # Traverse tree.
@@ -393,6 +368,13 @@ class ZMSZCatalogAdapter(ZMSItem.ZMSItem):
             attrs[attr_id] = {'boost':float(REQUEST.get('boost_%s'%attr_id, '1.0')),'type':REQUEST.get('type_%s'%attr_id, 'text')}
           self.setAttrs(attrs)
           message += self.getZMILangStr('MSG_CHANGED')
+
+        # Delete.
+        # -------
+        elif btn.startswith('Delete:'):
+          ids = [btn[btn.find(':')+1:]]
+          self.manage_delObjects(ids)
+          message += self.getZMILangStr('MSG_DELETED')%len(ids)
 
         # Remove.
         # -------

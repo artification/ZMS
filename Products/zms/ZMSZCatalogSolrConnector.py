@@ -16,7 +16,6 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 ################################################################################
 
-
 # Imports.
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 from zope.interface import implementer
@@ -25,7 +24,6 @@ from Products.zms import IZMSCatalogConnector
 from Products.zms import ZMSZCatalogAdapter
 from Products.zms import ZMSItem
 from Products.zms import standard
-from Products.zms import _xmllib
 
 
 ################################################################################
@@ -91,7 +89,7 @@ class ZMSZCatalogSolrConnector(
       p['start'] = page_index
       p['rows'] = page_size
       p['defType'] = 'edismax'
-      p['qf'] = ' '.join(['%s^%s'%(self._get_field_name(x), standard.pystr(attrs[x].get('boost', 1.0))) for x in attrs])
+      p['qf'] = ' '.join(['%s^%s'%(self._get_field_name(x), str(attrs[x].get('boost', 1.0))) for x in attrs])
       p['hl'] = 'true'
       p['hl.fragsize']  = self.getConfProperty('solr.select.hl.fragsize', 200)
       p['hl.fl'] = self.getConfProperty('solr.select.hl.fl', ','.join([self._get_field_name(x) for x in attrs]))
@@ -129,22 +127,6 @@ class ZMSZCatalogSolrConnector(
       return result
 
 
-    def __get_delete_xml(self, query='*:*', attrs={}):
-      xml =  []
-      xml.append('<?xml version="1.0"?>')
-      xml.append('<delete'+' '.join(['']+['%s="%s"'%(x, standard.pystr(attrs[x])) for x in attrs])+'>')
-      xml.append('<query>%s</query>'%query)
-      xml.append('</delete>')
-      return '\n'.join(xml)
-
-
-    def __get_command_xml(self, command):
-      xml =  []
-      xml.append('<?xml version="1.0"?>')
-      xml.append('<%s/>'%command)
-      return '\n'.join(xml)
-
-
     def _get_field_name(self, k):
       zcm = self.getCatalogAdapter()
       attrs = zcm.getAttrs()
@@ -159,12 +141,11 @@ class ZMSZCatalogSolrConnector(
 
 
     def __get_add_xml(self, node, recursive, xmlattrs={}):
+      results = []
       zcm = self.getCatalogAdapter()
       attrs = zcm.getAttrs()
-      xml =  []
-      xml.append('<?xml version="1.0"?>')
-      xml.append('<add'+' '.join(['']+['%s="%s"'%(x, standard.pystr(xmlattrs[x])) for x in xmlattrs])+'>')
       def cb(node, d):
+        xml =  []
         xml.append('<doc>')
         text = []
         for k in d:
@@ -174,44 +155,31 @@ class ZMSZCatalogSolrConnector(
           if k not in ['id']:
             if k in attrs:
               boost = attrs[k]['boost']
-              if type(v) in (str, str):
+              if isinstance(v, str):
                 name = '%s_t'%k
                 text.append(v)
             else:
-              if type(v) in (str, str):
+              if isinstance(v, str):
                 name = '%s_s'%k
           xml.append('<field name="%s" boost="%.1f">%s</field>'%(name, boost, v))
         xml.append('<field name="text_t">%s</field>'%' '.join([x for x in text if x]))
         xml.append('</doc>')
+        try:
+          results.extend(xml)
+        except:
+          standard.writeError(node,"can't cb")
       zcm.get_sitemap(cb, node, recursive)
-      xml.append('</add>')
-      return '\n'.join(xml)
-
-
-    # --------------------------------------------------------------------------
-    #  ZMSZCatalogSolrConnector._update:
-    # --------------------------------------------------------------------------
-    def _update(self, xml):
-      solr_url = self.getConfProperty('solr.url', 'http://localhost:8983/solr')
-      solr_core = self.getConfProperty('solr.core', self.getAbsoluteHome().id)
-      url = '%s/%s/update'%(solr_url, solr_core)
-      url = '%s?%s'%(url, xml)
-      result = self.http_import(url, method='POST', headers={'Content-Type':'text/xml;charset=UTF-8'})
-      self.writeLog("[ZMSZCatalogSolrConnector._update]: %s"%str(result))
-      return result
+      results.insert(0, '<?xml version="1.0"?>')
+      results.insert(1, '<add'+' '.join(['']+['%s="%s"'%(x, str(xmlattrs[x])) for x in xmlattrs])+'>')
+      results.append('</add>')
+      return '\n'.join(results)
 
 
     # --------------------------------------------------------------------------
     #  ZMSZCatalogSolrConnector.reindex_all:
     # --------------------------------------------------------------------------
-    def reindex_all(self):
+    def reindex_all(self, container=None):
       result = []
-      result.append(self._update(self.__get_delete_xml()))
-      container = self.getDocumentElement()
-      for root in container+[self.getPortalClients()]:
-        result.append(self._update(self.__get_add_xml(root, recursive=True)))
-      result.append(self._update(self.__get_command_xml('commit')))
-      result.append(self._update(self.__get_command_xml('optimize')))
       return ', '.join([x for x in result if x])
 
 
@@ -220,36 +188,14 @@ class ZMSZCatalogSolrConnector(
     # --------------------------------------------------------------------------
     def reindex_self(self, uid):
       result = []
-      container = self.getLinkObj(uid)
-      home_id = container.getHome().id
-      try:
-        result.append(self._update(self.__get_delete_xml(query='home_id_s:%s'%home_id)))
-        result.append(self._update(self.__get_add_xml(container, recursive=True)))
-        result.append(self._update(self.__get_command_xml('commit')))
-        result.append(self._update(self.__get_command_xml('optimize')))
-      except:
-        result.append(standard.writeError(self, 'can\'t reindex_self'))
       return ', '.join([x for x in result if x])
 
 
     # --------------------------------------------------------------------------
-    #  ZMSZCatalogSolrConnector.reindex_node:
+    #  ZMSZCatalogConnector.reindex_self:
     # --------------------------------------------------------------------------
     def reindex_node(self, node):
-      xml =  self.__get_add_xml(node, recursive=False, xmlattrs={'overwrite':'true'})
-      return self._update(xml)
-
-
-    def get_sitemap(self):
-      """
-      Returns sitemap.
-      @rtype: C{str}
-      """
-      request = self.REQUEST
-      RESPONSE = request.RESPONSE
-      RESPONSE.setHeader('Content-Type', 'text/xml; charset=utf-8')
-      xml =  self.__get_add_xml(self.getDocumentElement(), recursive=True)
-      return xml
+      pass
 
 
     ############################################################################

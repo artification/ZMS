@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en" tal:define="zmscontext python:here.getSelf(); standard modules/Products.zms/standard">
-<tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>
+<head tal:replace="structure python:here.zmi_html_head(here,request)">zmi_html_head</head>
 <style>
 
 </style>
 <body tal:attributes="class python:here.zmi_body_class(id='zcatalog config')">
-<tal:block tal:content="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</tal:block>
+<header tal:replace="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</header>
 <div id="zmi-tab">
 <tal:block tal:content="structure python:here.zmi_breadcrumbs(here,request)">zmi_breadcrumbs</tal:block>
 <tal:block tal:define="meta_types python:here.getConnectorMetaTypes(); connectors python:here.getConnectors()">
@@ -52,14 +52,17 @@
 				<a class="nav-link active show" tal:attributes="href python:'#%s'%here.meta_type" data-toggle="tab">Adapter</a>
 			</li>
 			<li class="nav-item" tal:repeat="si connectors">
-				<a class="nav-link" tal:attributes="href python:'#%s'%si.meta_type" data-toggle="tab" tal:content="python:si.meta_type">Connector</a>
+				<a class="nav-link" tal:attributes="href python:'#%s'%si.meta_type" data-toggle="tab">
+					<i class="fas fa-times" tal:attributes="onclick python:'if (confirm(getZMILangStr(\'MSG_CONFIRM_DELOBJ\')))$(this).closest(\'form\').append(\'<input type=hidden name=btn value=Delete:%s>\').submit()'%si.getId();"></i>
+					<tal:block tal:content="python:si.meta_type">Connector</tal:block>
+				</a>
 			</li>
 		</ul>
 	</nav>
 
 	<div class="tab-content">
-		<div class="tab-pane fade active show" tal:attributes="id here/meta_type">
-			<div class="card form-horizontal">
+		<div class="tab-pane fade active card show" tal:attributes="id here/meta_type">
+			<div class="form-horizontal">
 				<div class="form-group row">
 					<label class="col-sm-2 control-label" for="connectors"><span>Connectors</span></label>
 					<div class="col-sm-4">
@@ -89,7 +92,7 @@
 
 						<tal:block tal:define="global
 								metaObjIds python:here.getMetaobjIds();
-								metaObjs python:[x for x in [here.getMetaobj(y) for y in metaObjIds] if x['id'] not in ['ZMS'] and x['type'] in ['ZMSPackage','ZMSDocument','ZMSObject']];
+								metaObjs python:[x for x in [here.getMetaobj(y) for y in metaObjIds] if x['id'] not in ['ZMS'] and x['type'] in ['ZMSPackage','ZMSDocument','ZMSObject','ZMSRecordSet']];
 								metaObjPackages python:here.sort_list(['']+[x['id'] for x in metaObjs if x['type']=='ZMSPackage']);
 								metaObjPackages2 python:[x.get('package') for x in metaObjs if x.get('package') not in metaObjPackages]">
 
@@ -144,7 +147,7 @@
 																			disabled python:['','disabled'][int('catalog_index' in [x['id'] for x in metaObj['attrs']])]" onclick="toggleMetaobj()"/>
 																</td>
 																<td>
-																	<i tal:on-error="string:ERROR icon" tal:attributes="class python:zmscontext.zmi_icon(metaObj['id'])"></i>
+																	<i tal:on-error="string:ERROR icon" tal:attributes="class python:zmscontext.zmi_icon(metaObj['id'])"></i>&nbsp;
 																	<span tal:on-error="string:ERROR" tal:content="metaObj/name">the name</span>
 																	<span>(<tal:block tal:content="python:here.getZMILangStr('SOTYPE_%s'%metaObj['type'].upper())">the type</tal:block>)</span>
 																</td>
@@ -177,49 +180,11 @@
 			</div><!-- .form-horizontal -->
 		</div><!-- .tab-pane -->
 
-		<div class="tab-pane fade" tal:repeat="si connectors" tal:attributes="id si/meta_type">
-			<div class="card form-horizontal">
+		<div class="tab-pane fade card" tal:repeat="si connectors" tal:attributes="id si/meta_type">
+			<div class="form-horizontal">
 				<tal:block tal:content="structure python:si.manage_input_form(here,request)">
 					the zmi input-form
 				</tal:block>
-				<div class="form-group row">
-					<div class="col-sm-2">&nbsp;</div>
-					<div class="col-sm-10">
-						<div class="zmi-languages mb-3">
-							<select class="zmi-select" id="langs" name="langs:list" multiple="multiple">
-								<tal:block tal:repeat="langId python:here.getLangIds()">
-									<option selected="selected" tal:attributes="value langId" tal:content="python:'%s (%s)'%(here.getLanguageLabel(langId),langId)">the label</option>
-								</tal:block>
-							</select>
-						</div><!-- .zmi-languages -->
-						<div>
-							<div class="zmi-sitemap-expand" onclick="$('#ZMSZCatalogConnector .zmi-sitemap').toggleClass('full');$('#ZMSZCatalogConnector .zmi-sitemap-expand i').toggleClass('icon-resize-small')">
-								<i class="icon icon-resize-full fas fa-expand-arrows-alt" title="Seitenanfang"></i>
-							</div>
-							<div class="zmi-sitemap">
-							</div><!-- .zmi-sitemap -->
-						</div>
-					</div><!-- .col-sm-10 -->
-				</div><!-- .form-group -->
-				<div class="form-group row">
-					<div class="col-sm-2"></div>
-					<div class="col-sm-10">
-						<button name="btn" type="submit" class="btn btn-primary" tal:attributes="title python:here.getZMILangStr('BTN_SAVE')" value="Save">
-							<tal:block tal:content="structure python:here.getZMILangStr('BTN_SAVE')"></tal:block>
-						</button>
-						<button name="btn" type="submit" class="btn btn-secondary" tal:attributes="title python:here.getZMILangStr('BTN_DELETE')" value="Delete">
-							<tal:block tal:content="structure python:here.getZMILangStr('BTN_DELETE')"></tal:block>
-						</button>
-						<div class="btn-group">
-							<a class="btn btn-secondary" tal:attributes="href python:'%s/get_sitemap'%si.absolute_url(); title python:'%s (%s)'%(here.getZMILangStr('BTN_EXPORT'),here.getZMILangStr('TAB_SITEMAP'))" target="_blank">
-								<i class="fas fa-download"></i>
-							</a>
-							<span class="btn btn-warning" tal:attributes="title python:here.getZMILangStr('BTN_REFRESH'); data-id si/id" onclick="return zmiReindexCatalog()">
-								<i class="fas fa-sync"></i>
-							</span>
-						</div>
-					</div><!-- .col-sm-10 -->
-				</div><!-- .form-group -->
 			</div><!-- .form-horizontal -->
 		</div><!-- .tab-pane -->
 	</div><!-- .tab-content -->
@@ -294,8 +259,8 @@ function toggleMetaobj() {
 		});
 }
 
-function zmiReindexCatalog() {
-	//$(this).closest('form').append('<input type=\042hidden\042 name=\042objectIds:list\042 value=\042'+$(this).attr('data-id')+'\042><input type=\042hidden\042 name=\042btn\042 value=\042Reindex\042>').submit();
+function zmiExecuteCatalog(url)
+{
 	$(".zmi-sitemap .response").remove();
 	var $inputs = $(".zmi-sitemap input:checked");
 	var i = 0;
@@ -303,8 +268,39 @@ function zmiReindexCatalog() {
 			if (i < $inputs.length) {
 				var $input = $($inputs[i]);
 				var uid = $input.val();
-				var langs = $("#langs").val().join(';');
-				var data = {uid:uid,langs:langs};
+				var data = {uid:uid};
+				var $a = $input.next("a");
+				$a.after(`<span class="response alert zmi-code"><i class="fas fa-spinner fa-spin"></i></span>`);
+				$.ajax({
+					url:url,
+					data:data,
+					error: function (xhr, ajaxOptions, thrownError) {
+							$a.next('.response').addClass('alert-danger').html('( '+thrownError+' )');
+							i++;
+							fn();
+						},
+					success:function(response) {
+							$a.next('.response').addClass('alert-success').html('( '+response+' )');
+							i++;
+							fn();
+						}
+					});
+			}
+		}
+	fn();
+	return false;
+}
+
+function zmiReindexCatalog() 
+{
+	$(".zmi-sitemap .response").remove();
+	var $inputs = $(".zmi-sitemap input:checked");
+	var i = 0;
+	var fn = function() {
+			if (i < $inputs.length) {
+				var $input = $($inputs[i]);
+				var uid = $input.val();
+				var data = {uid:uid};
 				var $a = $input.next("a");
 				$a.after(`<span class="response alert zmi-code"><i class="fas fa-spinner fa-spin"></i></span>`);
 				$.ajax({
@@ -376,6 +372,6 @@ $(function() {
 	});
 </script>
 
-<tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
+<footer tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</footer>
 </body>
 </html>

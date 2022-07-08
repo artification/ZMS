@@ -21,7 +21,6 @@ from __future__ import absolute_import
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 from OFS.userfolder import UserFolder
 import copy
-import six
 import pickle
 import re
 import sys
@@ -54,7 +53,7 @@ def updateVersion(root):
               if key not in userDef:
                 userDef[key] = value[key]
           nodes = value.get('nodes', {})
-          for nodekey in nodes:
+          for nodekey in list(nodes):
             node = docelmnt.getLinkObj(nodekey)
             if node is not None:
               newkey = root.getRefObjPath(node)
@@ -102,7 +101,7 @@ def updateVersion(root):
       for name in d:
         value = d[name]
         nodes = value.get('nodes', {})
-        for nodekey in nodes:
+        for nodekey in list(nodes):
           node = root.getLinkObj(nodekey)
           if node is not None:
             nodes[nodekey]['home_id'] = node.getHome().id
@@ -148,7 +147,7 @@ def updateUserPassword(self, user, password, confirm):
     if password != confirm:
       raise zExceptions.InternalError("Passwort <> Confirm")
     userFldr = user['localUserFldr']
-    id = user['user_id_']
+    id = user.get('login_name',user.get('user_id'))
     if userFldr.meta_type == 'User Folder':
       roles = userFldr.getUser(id).getRoles()
       domains = userFldr.getUser(id).getDomains()
@@ -199,11 +198,10 @@ def deleteUser(self, id):
   
   # Delete local roles in node.
   nodes = self.getUserAttr(id, 'nodes', {})
-  for node in nodes:
+  for node in list(nodes):
     ob = self.getLinkObj(node)
     if ob is not None:
-      user_id = self.getUserAttr(id, 'user_id_', id)
-      delLocalRoles(ob, user_id)
+      delLocalRoles(ob, id)
   
   # Delete user from ZMS dictionary.
   self.delUserAttr(id)
@@ -284,7 +282,7 @@ class AccessableObject(object):
           raise zExceptions.InternalError("Maximum recursion depth exceeded")
         depth = depth + 1
         nodekey = root.getRefObjPath(ob)
-        if nodekey in nodes:
+        if nodekey in list(nodes):
           roles = standard.concat_list(roles, nodes[nodekey]['roles'])
           break
         if aq_parent:
@@ -320,7 +318,7 @@ class AccessableObject(object):
           raise zExceptions.InternalError("Maximum recursion depth exceeded")
         depth = depth + 1
         nodekey = root.getRefObjPath(ob)
-        if nodekey in nodes:
+        if nodekey in list(nodes):
           langs = nodes[nodekey]['langs']
           break
         if aq_parent:
@@ -328,6 +326,50 @@ class AccessableObject(object):
         else:
           ob = None
       return langs
+
+    #
+    # @see ZMSItem#zmi_page_request
+    #
+    def zmi_page_request(self, *args, **kwargs):
+      request = self.REQUEST
+      RESPONSE = request.RESPONSE
+      auth_user = request['AUTHENTICATED_USER']
+      # update user-attrs for sso-plugin
+      name = str(auth_user)
+      user = self.getValidUserids(search_term=name,exact_match=True)
+      if user is not None:
+        userFldr = user['localUserFldr']
+        if userFldr.meta_type == 'Pluggable Auth Service':
+          plugin = user['plugin']
+          if plugin.meta_type == 'ZMS PluggableAuthService SSO Plugin':
+            creds = plugin.extractCredentials(request)
+            d = {'name':'label','email':'email'}
+            for x in d:
+              name = d[x]
+              if x in creds:
+                v = creds[x]
+                if self.getUserAttr(auth_user,name,v) != v:
+                  self.setUserAttr(auth_user,name,v)
+      # manage must not be accessible for Anonymous
+      if request['URL0'].find('/manage') >= 0:
+        lower = self.getUserAttr(auth_user,'attrActiveStart','')
+        upper = self.getUserAttr(auth_user,'attrActiveEnd','')
+        if not standard.todayInRange(lower, upper) or auth_user.has_role('Anonymous'):
+          import zExceptions
+          raise zExceptions.Unauthorized
+      # manage may be registrable for Authenticated without permissions
+      if not isinstance(auth_user,str) and not auth_user.has_permission('ZMS Author',self):
+        standard.writeError(self, "[zmi_page_request]: %s"%str(auth_user))
+        register = self.getConfProperty('ZMS.register.href','')
+        if len(register) > 0:
+          url = standard.url_append_params(register,{'came_from':request['URL0']})
+          standard.writeError(self, "[zmi_page_request]: redirect to %s"%str(url))
+          RESPONSE.redirect(url, lock=1)
+          RESPONSE.setHeader('Expires', 'Sat, 01 Jan 2000 00:00:00 GMT')
+          RESPONSE.setHeader('Cache-Control', 'no-cache')
+        else:
+          import zExceptions
+          raise zExceptions.Unauthorized
 
 
     ############################################################################
@@ -453,15 +495,22 @@ class AccessableContainer(AccessableObject):
             l.append((id, d[nodekey]['roles']))
       manager_permissions = [x['name'] for x in self.permissionsOfRole('Manager') if x['selected'] == 'SELECTED']
       for i in l:
-        standard.writeLog(self, '[synchronizeRolesAccess]: role=%s, role_permissions=%s'%(i[0], standard.pystr(i[1])))
+        standard.writeLog(self, '[synchronizeRolesAccess]: role=%s, role_permissions=%s'%(i[0], str(i[1])))
         permissions = []
         for role in i[1]:
           role_permissions = role_defs.get(role, [])
           if '*' in role_permissions:
             role_permissions = manager_permissions
           permissions = standard.concat_list(permissions, role_permissions)
-        standard.writeLog(self, '[synchronizeRolesAccess]: role_to_manage=%s, permissions=%s'%(i[0], standard.pystr(permissions)))
+        standard.writeLog(self, '[synchronizeRolesAccess]: role_to_manage=%s, permissions=%s'%(i[0], str(permissions)))
         self.manage_role(role_to_manage=i[0], permissions=permissions)
+      # Grant View permission to Authenticated.
+      for i in [['Authenticated',['View']]]:
+        role = i[0]
+        permissions = i[1]
+        role_permissions = [x['name'] for x in self.permissionsOfRole(role) if x['selected'] == 'SELECTED']
+        permissions = standard.concat_list(permissions, role_permissions)
+        self.manage_role(role_to_manage=role, permissions=permissions)
 
     # --------------------------------------------------------------------------
     #  AccessableContainer.grantPublicAccess:
@@ -573,14 +622,14 @@ class AccessManager(AccessableContainer):
           value = d[name]
           nodes = value.get('nodes', {})
           nodekeys = [x for x in nodes if nodes[x].get('home_id') == home_id]
-          aq_nodekeys = [x for x in nodes if nodes[x].get('home_id') in home_ids]
-          if len(nodekeys) > 0 or (acquired and len(aq_nodekeys) > 0):
+          if len(nodekeys) > 0 or acquired:
             userDef = {'nodes':{}}
             for key in value:
               if key not in userDef:
                 userDef[key] = value[key]
             if acquired:
               userDef['acquired'] = len(nodekeys) == 0
+              aq_nodekeys = [x for x in nodes if nodes[x].get('home_id') in home_ids]
               nodekeys.extend(aq_nodekeys)
             for nodekey in nodekeys:
               userDef['nodes'][nodekey] = nodes[nodekey]
@@ -592,7 +641,7 @@ class AccessManager(AccessableContainer):
     # --------------------------------------------------------------------------
     def searchUsers(self, search_term=''):
       users = []
-      if search_term != '':
+      if search_term:
         userFldr = self.getUserFolder()
         doc_elmnts = userFldr.aq_parent.objectValues(['ZMS'])
         if doc_elmnts:
@@ -602,9 +651,9 @@ class AccessManager(AccessableContainer):
           elif userFldr.meta_type == 'Pluggable Auth Service':
             users.extend([x['login'] for x in userFldr.searchUsers(login=search_term, id=None, exact_match=True)])
           else:
-            login_attr = 'login'
             users.extend([x for x in userFldr.getUserNames() if x == search_term])
       return users
+
     # --------------------------------------------------------------------------
     #  AccessManager.getSearchableAttrs:
     #
@@ -632,7 +681,6 @@ class AccessManager(AccessableContainer):
       traverseUserFolders(self.getUserFolder())
       attrs = sorted(attrs,key=lambda x:x[1])
       return attrs
-
 
     # --------------------------------------------------------------------------
     #  AccessManager.getValidUserids:
@@ -677,7 +725,19 @@ class AccessManager(AccessableContainer):
               if plugin.meta_type == 'ZODB User Manager':
                 users.append(user)
           else:
-            users.extend(usersDefs)
+            secUsers = self.getSecurityUsers()
+            secUsers = [{'login':x,'user':secUsers[x]} for x in secUsers]
+            secUsers = [{'login':x['login'],'label':x['user'].get('label',x['user'].get('details',{}).get('label',''))} for x in secUsers]
+            secUsers = [x for x in secUsers if x['label'].lower().find(search_term.lower())>=0]
+            for user in usersDefs:
+              plugin = getattr(userFldr,user['pluginid'])
+              if plugin.meta_type == 'ZMS PluggableAuthService SSO Plugin':
+                secUser = [x for x in secUsers if x['login'] == user['login']]
+                if secUser:
+                  user['label'] = secUser[0]['label']
+                  users.append(user)
+              else:
+                users.append(user)
       else:
         login_attr = 'name'
         for userName in userFldr.getUserNames():
@@ -691,7 +751,6 @@ class AccessManager(AccessableContainer):
         d = {}
         d['localUserFldr'] = userFldr
         d['name'] = login_name
-        d['user_id_'] = login_name
         d['user_id'] = login_name
         d['roles'] = []
         d['domains'] = []
@@ -721,14 +780,6 @@ class AccessManager(AccessableContainer):
           _uid_attr = login_attr
           uid = plugin.getUserIdForLogin(login_name)
         if uid is not None:
-          d['user_id_'] = uid
-          if six.PY2:
-            try:
-              if uid.startswith('\x01\x05\x00\x00'):
-                import binascii
-                uid = binascii.b2a_hex(buffer(uid))
-            except:
-              standard.writeError(self,'[getValidUserids]: _uid_attr=%s'%_uid_attr)
           d['user_id'] = uid
           if len([x for x in c if x['id'] == 'user_id'])==0:
             c.append({'id':'user_id','name':_uid_attr.capitalize(),'type':'string'})
@@ -757,8 +808,8 @@ class AccessManager(AccessableContainer):
       if columns is None:
         columns = c
       return {'columns':columns,'records':records}
-  
-  
+
+
     # --------------------------------------------------------------------------
     #  AccessManager.findUser:
     # --------------------------------------------------------------------------
@@ -774,37 +825,37 @@ class AccessManager(AccessableContainer):
         # Details
         user['details'] = []
         if 'user_id' in user:
-          name = 'user_id'
+          key = 'user_id'
           label = 'User Id'
           value = user['user_id']
-          user['details'].append({'name':name,'label':label,'value':value})
-        # LDAP schema
+          user['details'].append({'name':key,'label':label,'value':value})
+        # LDAPUserFolder: handle schema
         ldapUserFldr = None
         if userFldr.meta_type == 'LDAPUserFolder':
           ldapUserFldr = userFldr
         elif userFldr.meta_type == 'Pluggable Auth Service' and user['plugin'].meta_type == 'LDAP Multi Plugin':
           ldapUserFldr = getattr(user['plugin'],'acl_users')
         if ldapUserFldr is not None:
-          details = ldapUserFldr.getUserDetails(encoded_dn=user['dn'],format='dictionary')
           for schema in ldapUserFldr.getLDAPSchema():
-            name = schema[0]
+            key = schema[0]
             label = schema[1]
-            value = user.get(name,'')
-            user['details'].append({'name':name,'label':label,'value':value})
-          # User ID
-          user['details'] = [x for x in user['details'] if not x['label'].startswith('_')]
+            value = user.get(key,'')
+            user['details'].append({'name':key,'label':label,'value':value})
+        # ZMS PluggableAuthService SSO Plugin: handle dict
+        # TODO make this code more generic and remove hard-coded dependency to ZMS PluggableAuthService SSO Plugin
+        if userFldr.meta_type == 'Pluggable Auth Service' and user['plugin'].meta_type == 'ZMS PluggableAuthService SSO Plugin':
+           user_attr = self.getUserAttr(name)
+           if user_attr is not None:
+             for id in user_attr:
+               if id not in user:
+                 key = id
+                 label = ' '.join([x.capitalize() for x in key.split('_')])
+                 value = user_attr[id]
+                 user['details'].append({'name':key,'label':label,'value':value})
+        # Skip private (e.g. User ID)
+        user['details'] = [x for x in user['details'] if not x['label'].startswith('_')]
       return user
 
-
-    # --------------------------------------------------------------------------
-    #  AccessManager.getUserName:
-    # --------------------------------------------------------------------------
-    def getUserName(self, uid):
-      d = self.getSecurityUsers()
-      for k in d:
-        if d.get('user_id_', k) == uid:
-          return k
-      return None
 
     # --------------------------------------------------------------------------
     #  AccessManager.setUserAttr:
@@ -849,6 +900,12 @@ class AccessManager(AccessableContainer):
       return v
 
     # --------------------------------------------------------------------------
+    #  AccessManager.delUser:
+    # --------------------------------------------------------------------------
+    def delUser(self, id):
+      deleteUser(self, id)
+
+    # --------------------------------------------------------------------------
     #  AccessManager.delUserAttr:
     # --------------------------------------------------------------------------
     def delUserAttr(self, user):
@@ -859,7 +916,7 @@ class AccessManager(AccessableContainer):
         del d[user]
         root.setConfProperty('ZMS.security.users', d)
       except:
-        standard.writeError(root, '[delUserAttr]: user=%s not deleted!'%user)
+        standard.writeError(root, '[delUserAttr]: user=%s not deleted!'%str(user))
 
 
     # --------------------------------------------------------------------------
@@ -912,33 +969,36 @@ class AccessManager(AccessableContainer):
         ob = self
         d = self.getSecurityUsers()
         for userid in d:
-          nodes = self.getUserAttr(userid, 'nodes', {}) 
-          for node in nodes:
-              target = self.getLinkObj(node)
-              if target is None:
-                self.delLocalUser(userid, node)
-                rtn += userid + ": remove " + node + "<br/>"
-      
+          if userid is None:
+            self.delUser(userid)
+          else:
+            nodes = self.getUserAttr(userid, 'nodes', {}) 
+            for node in list(nodes):
+                target = self.getLinkObj(node)
+                if target is None:
+                  self.delLocalUser(userid, node)
+                  rtn += userid + ": remove " + node + "<br/>"
+      root = self.getRootElement()
       for local_role in ob.get_local_roles():
         b = False
         userid = local_role[0]
         userroles = local_role[1]
         if 'Owner' not in userroles:
           if userid not in valid_userids and userid not in invalid_userids:
-            name = self.getUserName(userid)
-            user = ob.findUser(name)
+            user = ob.findUser(userid)
             if user is None:
               invalid_userids.append(userid)
             else:
               valid_userids.append(userid)
           if userid in valid_userids:
             nodes = self.getUserAttr(userid, 'nodes', {})
-            if len([x for x in nodes if (x=="{$}" and ob.id=="content") or x=="{$%s}"%ob.id or x.endswith("/%s}"%ob.id)])==0:
+            ref = root.getRefObjPath(self)
+            if len([x for x in nodes if (x==ref) or (x=="{$}" and ob.id=="content") or x=="{$%s}"%ob.id or x.endswith("/%s}"%ob.id)])==0:
               b = True
           elif userid in invalid_userids:
             b = True
         if b:
-          rtn += ob.absolute_url()+ " " + userid + ": remove " + standard.pystr(userroles) + "<br/>"
+          rtn += ob.absolute_url()+ " " + userid + ": remove " + str(userroles) + "<br/>"
           delLocalRoles(ob, userid)
       
       # Process subtree.
@@ -962,25 +1022,20 @@ class AccessManager(AccessableContainer):
         dt = DateTime(time.mktime(attrActiveEnd))
         active = active and (dt.isFuture() or (dt.equalTo(dt.earliestTime()) and dt.latestTime().isFuture()))
       nodes = self.getUserAttr(id, 'nodes', {})
-      for node in nodes:
+      for node in list(nodes):
         ob = self.getLinkObj(node)
         if ob is not None:
-          user_id = self.getUserAttr(id, 'user_id_', id)
           if active:
             roles = nodes[node].get('roles', [])
-            setLocalRoles(ob, user_id, roles)
+            setLocalRoles(ob, id, roles)
           else:
-            delLocalRoles(ob, user_id)
+            delLocalRoles(ob, id)
 
 
     # --------------------------------------------------------------------------
     #  AccessManager.setLocalUser:
     # --------------------------------------------------------------------------
     def setLocalUser(self, id, node, roles, langs):
-      
-      # Set user id.
-      user = self.findUser(id)
-      self.setUserAttr(id, 'user_id_', user['user_id_'])
       
       # Insert node to user-properties.
       root = self.getRootElement()
@@ -996,8 +1051,7 @@ class AccessManager(AccessableContainer):
       # Set local roles in node.
       ob = self.getLinkObj(node)
       if ob is not None:
-        user_id = self.getUserAttr(id, 'user_id_', id)
-        setLocalRoles(ob, user_id, roles)
+        setLocalRoles(ob, id, roles)
 
 
     # --------------------------------------------------------------------------
@@ -1008,15 +1062,14 @@ class AccessManager(AccessableContainer):
       # Delete node from user-properties.
       root = self.getRootElement()
       nodes = root.getUserAttr(id, 'nodes', {})
-      if node in nodes: 
+      if node in list(nodes): 
         del nodes[node]
         root.setUserAttr(id, 'nodes', nodes)
       
       # Delete local roles in node.
       ob = root.getLinkObj(node)
       if ob is not None:
-        user_id = root.getUserAttr(id, 'user_id_', id)
-        delLocalRoles(ob, user_id)
+        delLocalRoles(ob, id)
 
 
     ############################################################################
@@ -1176,13 +1229,12 @@ class AccessManager(AccessableContainer):
             self.setUserAttr(id, 'attrActive', newAttrActive)
             self.setUserAttr(id, 'attrActiveStart', self.parseLangFmtDate(REQUEST.get('attrActiveStart')))
             self.setUserAttr(id, 'attrActiveEnd', self.parseLangFmtDate(REQUEST.get('attrActiveEnd')))
-            self.setUserAttr(id, 'email', REQUEST.get('email', '').strip())
-            self.setUserAttr(id, 'profile', REQUEST.get('profile', '').strip())
-            self.setUserAttr(id, 'user_id', REQUEST.get('user_id', '').strip())
+            for key in ['email','profile','user_id']:
+              if key in REQUEST.keys():  
+                value = REQUEST.get(key, '').strip()
+                self.setUserAttr(id, key, value)
             if attrActive != newAttrActive:
               self.toggleUserActive(id)
-          elif key=='attr':
-            pass
           #-- Assemble message.
           message = self.getZMILangStr('MSG_CHANGED')
         
@@ -1191,7 +1243,7 @@ class AccessManager(AccessableContainer):
         elif btn in ['delete', 'remove', 'BTN_DELETE']:
           if key=='obj':
             #-- Delete user.
-            deleteUser(self, id)
+            self.delUser(id)
             #-- Remove user.
             if btn == 'remove':
               userAdderPlugin = self.getUserAdderPlugin()
@@ -1229,7 +1281,7 @@ class AccessManager(AccessableContainer):
             mbody.append('\n')
             nodes = self.getUserAttr(id, 'nodes', {})
             security_roles = self.getSecurityRoles()
-            for nodekey in nodes:
+            for nodekey in list(nodes):
               if nodekey in nodekeys:
                 node = nodes[nodekey]
                 roles = node.get('roles', [])
@@ -1247,7 +1299,7 @@ class AccessManager(AccessableContainer):
             mbody.append('\n' + self.getZMILangStr('WITH_BEST_REGARDS').replace('\\n', '\n'))
             if len(self.getZMILangStr('WITH_BEST_REGARDS')) < 32:
                 mbody.append('\n-------------------------------')
-                mbody.append('\n' + standard.pystr(REQUEST['AUTHENTICATED_USER']))
+                mbody.append('\n' + str(REQUEST['AUTHENTICATED_USER']))
                 mbody.append('\n-------------------------------')
             mbody = ''.join(mbody)
             #-- Subject
@@ -1288,7 +1340,7 @@ class AccessManager(AccessableContainer):
               xml += '<email>%s</email>'%standard.html_quote(email)
             nodes = self.getUserAttr(userName, 'nodes', {})
             xml += '<nodelist>'
-            for nodekey in nodes:
+            for nodekey in list(nodes):
               xml += '<node>'
               xml += '<nodeid>%s</nodeid>'%nodekey
               try:
@@ -1297,7 +1349,7 @@ class AccessManager(AccessableContainer):
                 xml += '<nodeurl></nodeurl>'
               try:  
                 title = re.sub('&.*;', '', self.getLinkObj(nodekey).getTitle(REQUEST).strip())
-                xml += '<nodetitle>%s</nodetitle>'%title
+                xml += '<nodetitle><![CDATA[%s]]></nodetitle>'%title
               except:
                 xml += '<nodetitle></nodetitle>'
               xml += '<langlist>'

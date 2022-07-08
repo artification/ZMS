@@ -47,6 +47,7 @@ from Products.zms import ZMSMetacmdProvider, ZMSMetamodelProvider, ZMSFormatProv
 from Products.zms.zmscustom import ZMSCustom
 from Products.zms.zmslinkcontainer import ZMSLinkContainer
 from Products.zms.zmslinkelement import ZMSLinkElement
+from Products.zms.zmsindex import ZMSIndex
 from Products.zms.zmslog import ZMSLog
 from Products.zms.zmsobject import ZMSObject
 from Products.zms.zmssqldb import ZMSSqlDb
@@ -81,7 +82,7 @@ def subscriber(event):
         standard.triggerEvent(event.object, "*.ObjectRemoved")
   elif isinstance(event, ObjectRemovedEvent):
     if isinstance(event.object, ZMSObject):
-        # trigger object-removed event
+      # trigger object-removed event
       standard.triggerEvent(event.object, "*.ObjectRemoved")
 zope.event.subscribers.append(subscriber)
 
@@ -95,39 +96,21 @@ zope.event.subscribers.append(subscriber)
 # ------------------------------------------------------------------------------
 #  importTheme:
 # ------------------------------------------------------------------------------
-def importTheme(folder, theme):
-  
+def importTheme(self, theme):
   filename = _fileutil.extractFilename(theme)
-  id = filename[:filename.rfind('.')]
-  
-  if filename.endswith('.zexp'):
-    ### Store copy of ZEXP in INSTANCE_HOME/import-folder.
-    filepath = standard.getINSTANCE_HOME() + '/import/' + filename
-    if theme.startswith('http://'):
-      initutil = standard.initutil()
-      initutil.setConfProperty('HTTP.proxy',REQUEST.get('http_proxy',''))
-      zexp = standard.http_import( initutil, theme)
-      _fileutil.exportObj( zexp, filepath)
-    else:
-      packagepath = package_home(globals()) + '/import/' + filename
-      try:
-        os.stat(_fileutil.getOSPath(filepath))
-      except OSError:
-        shutil.copy( packagepath, filepath)
-    
-    ### Import theme from ZEXP.
-    _fileutil.importZexp( folder, filename)
-  
-  else:
-    id = filename[:filename.find('-')]
-    _confmanager.initConf(folder.content, id, remote=False)
-  
+  id = filename[:filename.rfind('-')]
+  filepath = package_home(globals()) + '/import/'
+  path = filepath + filename
+  self.importConf(path)
   return id
 
 
 # ------------------------------------------------------------------------------
 #  initZMS:
 # ------------------------------------------------------------------------------
+# A new ZMS node can be initalized as a stand-alone client (master) or 
+# as subordinated client acquiring content models and sharing the zmsindex.
+# Use a request variable 'acquire' =  1 to initalize ZMS as a client
 def initZMS(self, id, titlealt, title, lang, manage_lang, REQUEST):
 
   ### Constructor.
@@ -160,14 +143,17 @@ def initZMS(self, id, titlealt, title, lang, manage_lang, REQUEST):
   obj.setConfProperty('HTTP.proxy', REQUEST.get('http_proxy', ''))
   obj.setConfProperty('ZMS.autocommit', 1)
 
-  ### Init ZMS object-model.
-  _confmanager.initConf(obj, 'com.zms.foundation', remote=False)
-  _confmanager.initConf(obj, 'com.zms.foundation.bootstrap', remote=False)
-  _confmanager.initConf(obj, 'com.zms.foundation.theme', remote=False)
-  _confmanager.initConf(obj, 'com.zms.index', remote=False)
+  ### Init ZMS default content-model.
+  _confmanager.initConf(obj, 'conf:com.zms.foundation*')
+
+  ### Init ZMS index.
+  obj.getZMSIndex()
+
+  ### Init ZMS default actions.
+  _confmanager.initConf(obj, 'conf:manage_tab_*')
 
   ### Init default-configuration.
-  _confmanager.initConf(obj, 'default', remote=False)
+  _confmanager.initConf(obj, ':default')
 
   ### Init Role-Definitions and Permission Settings.
   obj.initRoleDefs()
@@ -219,7 +205,7 @@ def manage_addZMS(self, lang, manage_lang, REQUEST, RESPONSE):
     obj = initZMS(homeElmnt, 'content', titlealt, title, lang, manage_lang, REQUEST)
     
     ##### Add Theme ####
-    themeId = importTheme(homeElmnt,REQUEST['theme'])
+    themeId = importTheme(obj,REQUEST['theme'])
     obj.setConfProperty('ZMS.theme',themeId)
 
     ##### Default content ####
@@ -275,6 +261,10 @@ class ZMS(
 
     # Management Permissions.
     # -----------------------
+    __viewPermissions__ = (
+        'manage', 'manage_main', 'manage_container', 'manage_workspace', 'manage_menu',
+        'manage_ajaxGetChildNodes',
+        )
     __administratorPermissions__ = (
         'manage_customize',
         'manage_customizeInstalledProducts',
@@ -283,7 +273,6 @@ class ZMS(
         'manage_customizeDesign', 'manage_customizeDesignForm',
         )
     __authorPermissions__ = (
-        'manage', 'manage_main', 'manage_main_iframe', 'manage_workspace',
         'manage_addZMSModule',
         'manage_deleteObjs', 'manage_undoObjs',
         'manage_moveObjUp', 'manage_moveObjDown', 'manage_moveObjToPos',
@@ -291,6 +280,7 @@ class ZMS(
         'manage_ajaxDragDrop', 'manage_ajaxZMIActions',
         'manage_properties', 'manage_changeProperties', 'manage_changeTempBlobjProperty',
         'manage_wfTransition', 'manage_wfTransitionFinalize',
+        'manage_RefForm',
         'manage_userForm', 'manage_user',
         'manage_importexport', 'manage_import', 'manage_export',
         'manage_executeMetacmd',
@@ -299,6 +289,7 @@ class ZMS(
         'manage_users', 'manage_users_sitemap', 'manage_userProperties', 'manage_roleProperties', 'userdefined_roles',
         )
     __ac_permissions__=(
+        ('View', __viewPermissions__),
         ('ZMS Administrator', __administratorPermissions__),
         ('ZMS Author', __authorPermissions__),
         ('ZMS UserAdministrator', __userAdministratorPermissions__),
@@ -377,64 +368,20 @@ class ZMS(
     #
     #  Get version.
     # --------------------------------------------------------------------------
-    def zms_version(self):
-      """
-      Try to obtain the version from package info if installed by pip
-      otherwise read from version.txt and from svnversion
-        
-        1. installed by pip from PyPI
-          (revision 'XXXX' in version.txt - package info of official releases does not contain revision)
-        2. installed by pip from ZMSLabs w/ info by svn
-          (revision 'svn-rXXXX' in package info due to setup.cfg)
-        3. installed by pip from TAR-Ball w/o info by svn
-          (revision 'XXXX' in version.txt due to nightly build - 'svn0' in package info due to setup.cfg)
-        4. deployed to instance/Products
-          (revision 'XXXX' in version.txt, maybe installed but unused package)
-        5. checked out to instance/Products as working copy from svn 
-          (revision 'REV' in version.txt, maybe installed but unused package)
-      """
-      from pkg_resources import WorkingSet, Requirement
-      zms = WorkingSet().find(Requirement.parse('ZMS3'))
-      pth = _fileutil.getOSPath(package_home(globals()))
-      
-      file = open(_fileutil.getOSPath(pth+'/version.txt'), 'r')
-      version_txt = file.read()
-      version     = version_txt.strip().split('.')
+    def zms_version(self, custom=False):
+      file = open(_fileutil.getOSPath(package_home(globals())+'/version.txt'),'r')
+      rtn = file.read()
       file.close()
-      
-      # return plain version info if it is a deployment specific format like 
-      # ZMS3-3.Y.Z.XXXX.prj-ABCD
-      if len(version)!=4:
-        return version_txt
-      
-      # obtain revision and return formatted version info
-      # ZMS3-3.Y.Z.XXXX
-      else:
-        revision = version.pop()
-        # get revision from pip if running as package
-        if (zms is not None) and ('site-packages' in pth):
-          version_pip = str(zms.version)
-          if ('.svn-r' in version_pip):
-            # leave -r in revision to recognize as snapshot below
-            revision = version_pip.strip().split('.svn', 1)[1]        
-        # get revision from svnversion
-        elif (revision == 'REV'):
-          import subprocess
-          version_svn = subprocess.Popen("svnversion",
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            shell=True, cwd=pth, universal_newlines=True)
-          revision = version_svn.communicate()[0].strip()
-        # format revision info
-        if (revision.startswith('export')):
-          revision = ' (unknown build/snapshot)'
-        # at moment there are 4-digits for builds 
-        elif len(revision)==4:
-          revision = ' (build #%s)'%revision
-        # otherwise it is a development snapshot
-        else:
-          revision = ' (snapshot #%s)'%revision.replace('-r', '')
-      
-      return '.'.join(version)+revision
+      zms_custom_version = os.environ.get('ZMS_CUSTOM_VERSION', '')
+      if custom and zms_custom_version != '':
+        rtn += ' ({})'.format(zms_custom_version)
+      if custom and os.path.exists(_fileutil.getOSPath(package_home(globals())+'/../../.git/FETCH_HEAD')):
+        file = open(_fileutil.getOSPath(package_home(globals())+'/../../.git/FETCH_HEAD'),'r')
+        FETCH_HEAD = file.read()
+        file.close()
+        FETCH_HEAD = FETCH_HEAD[0:7]
+        rtn += ' git#%s'%(FETCH_HEAD)
+      return rtn
 
     # --------------------------------------------------------------------------
     #  ZMS.getDocumentElement

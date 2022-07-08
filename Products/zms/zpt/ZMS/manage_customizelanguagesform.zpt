@@ -3,9 +3,9 @@
 	dummy0 python:here.zmi_page_request(here,request);
 	zmscontext python:here.getSelf();
 	standard modules/Products.zms/standard">
-<tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>
+<head tal:replace="structure python:here.zmi_html_head(here,request)">zmi_html_head</head>
 <body tal:attributes="class python:here.zmi_body_class(id='languages config')">
-<tal:block tal:content="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</tal:block>
+<header tal:replace="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</header>
 <div id="zmi-tab">
 <tal:block tal:content="structure python:here.zmi_breadcrumbs(here,request,extra=[{'label':'TAB_LANGUAGES','action':'manage_customizeLanguagesForm'}])">zmi_breadcrumbs</tal:block>
 
@@ -121,8 +121,8 @@ function zmiFormSubmit(sender,d) {
 	</tbody>
 	</table>
 	<div class="controls save">
-		<button name="btn" type="submit" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
-		<button name="btn" type="submit" class="btn btn-secondary" value="BTN_DELETE" tal:content="python:here.getZMILangStr('BTN_DELETE')">Delete</button>
+		<button title="Save Language Definitions" name="btn" type="submit" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+		<button title="Delete Selected Language Definitions" name="btn" type="submit" class="btn btn-secondary" value="BTN_DELETE" tal:content="python:here.getZMILangStr('BTN_DELETE')">Delete</button>
 	</div>
 </form>
 
@@ -130,13 +130,14 @@ function zmiFormSubmit(sender,d) {
 	<input type="hidden" name="lang" tal:attributes="value request/lang">
 	<legend>
 		<span class="has_tooltip"
-		data-toggle="tooltip" data-placement="right" title="Tooltip"
-		tal:attributes="title python:here.getZMILangStr('TIP_MULTILANGDICT')"
-		tal:content="python:here.getZMILangStr('ATTR_DICTIONARY')">
+			data-toggle="tooltip" data-placement="right" title="Tooltip"
+			tal:attributes="title python:here.getZMILangStr('TIP_MULTILANGDICT')"
+			tal:content="python:here.getZMILangStr('ATTR_DICTIONARY')">
 			Dictionary
 		</span>
 	</legend>
-	<table class="table table-sm table-striped table-bordered table-hover">
+	<table class="table table-sm table-striped table-bordered table-hover table-responsive"
+		tal:attributes="class python:'table table-sm table-striped table-bordered table-hover %s'%(len(langIds)>6 and 'table-responsive' or '')">
 	<thead>
 	<tr>
 		<th class="text-center">
@@ -171,8 +172,8 @@ function zmiFormSubmit(sender,d) {
 	</tbody>
 	</table>
 	<div class="controls save">
-		<button name="btn" type="submit" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
-		<button name="btn" type="submit" class="btn btn-secondary" value="BTN_DELETE" tal:content="python:here.getZMILangStr('BTN_DELETE')">Delete</button>
+		<button title="Save Dictionary"  name="btn" type="submit" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+		<button title="Delete Selected Dictionary Terms" name="btn" type="submit" class="btn btn-secondary" value="BTN_DELETE" tal:content="python:here.getZMILangStr('BTN_DELETE')">Delete</button>
 	</div>
 </form>
 
@@ -202,6 +203,6 @@ function zmiFormSubmit(sender,d) {
 </tal:block>
 
 </div><!-- #zmi-tab -->
-<tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
+<footer tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</footer>
 </body>
 </html>

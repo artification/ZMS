@@ -24,14 +24,18 @@ class IZMSCatalogConnector(Interface):
     def search(self, qs, order=None):
       """
       Search.
-      @param qs query-string
-      @param order
+      @param qs: query-string
+      @rtype: C{str}
+      @param order: result order (obsolete)
+      @rtype: C{bool}
+      @return: list of result items
       @rtype: C{list}
       """
 
     def reindex_all(self):
       """
       Reindex.
+      @return: comma separated result message for any indexed object
       @rtype: C{str}
       """
 
@@ -39,10 +43,4 @@ class IZMSCatalogConnector(Interface):
       """
       Reindex single node.
       @rtype: C{str}
-      """
-
-    def get_sitemap(self):
-      """
-      Returns sitemap.
-      @rtype: C{list}
       """

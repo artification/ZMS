@@ -18,6 +18,7 @@
 
 # Imports.
 from __future__ import absolute_import
+from fnmatch import fnmatch
 from io import StringIO
 from AccessControl import ClassSecurityInfo
 from AccessControl.class_init import InitializeClass
@@ -29,26 +30,29 @@ from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 from Products.PageTemplates import ZopePageTemplate
 from Products.PythonScripts import PythonScript
 import OFS.misc_
+import configparser
 import importlib
+import io
 import operator
 import os
-import six.moves
 import tempfile
 import time
 import xml.dom.minidom
 import zExceptions
 from zope.interface import implementer, providedBy
 # Product imports.
-from Products.zms import standard
 from .IZMSConfigurationProvider import IZMSConfigurationProvider
+from Products.zms import standard
 from Products.zms import ZMSFilterManager, IZMSMetamodelProvider, IZMSFormatProvider, IZMSCatalogAdapter, ZMSZCatalogAdapter, IZMSRepositoryManager
 from Products.zms import _exportable
 from Products.zms import _fileutil
+from Products.zms import _repositoryutil
 from Products.zms import _mediadb
 from Products.zms import _multilangmanager
 from Products.zms import _sequence
 from Products.zms import standard
 from Products.zms import zopeutil
+from Products.zms import zmsindex
 from Products.zms import zmslog
 
 
@@ -69,7 +73,7 @@ class ConfDict(object):
             for home in [PRODUCT_HOME, standard.getINSTANCE_HOME()]:
               fp = os.path.join(home, 'etc', 'zms.conf')
               if os.path.exists(fp):
-                cfp = six.moves.configparser.ConfigParser()
+                cfp = configparser.ConfigParser()
                 cfp.readfp(open(fp))
                 for section in cfp.sections():
                     for option in cfp.options(section):
@@ -97,30 +101,20 @@ class ConfDict(object):
 # ------------------------------------------------------------------------------
 #  _confmanager.initConf:
 # ------------------------------------------------------------------------------
-def initConf(self, profile, remote=True):
-  standard.writeBlock( self, '[initConf]: profile='+profile)
-  createIfNotExists = True
-  files = self.getConfFiles(remote)
-  for filename in files:
-    label = files[filename]
-    if label.startswith(profile + '.') or label.startswith(profile + '-'):
-      standard.writeBlock( self, '[initConf]: filename='+filename)
-      if filename.find('.zip') > 0:
-        self.importConfPackage(filename, createIfNotExists)
-      elif filename.find('.xml') > 0:
-        self.importConf(filename, createIfNotExists=createIfNotExists)
-
-
-# ------------------------------------------------------------------------------
-#  _confmanager.updateConf:
-# ------------------------------------------------------------------------------
-def updateConf(self):
-  createIfNotExists = False
-  for filename in self.getConfFiles():
-    try:
-      self.importConf(filename)
-    except:
-      pass
+def initConf(self, pattern):
+    standard.writeBlock( self, '[initConf]: pattern='+pattern)
+    prefix = pattern.split(':')[0]
+    pattern = pattern.split(':')[1]
+    files = self.getConfFiles()
+    for filename in files:
+        if filename.startswith(prefix):
+            label = files[filename]
+            if fnmatch(label,'%s-*'%pattern):
+                standard.writeBlock( self, '[initConf]: filename='+filename)
+                if filename.endswith('.zip'):
+                    self.importConfPackage(filename)
+                else:
+                    self.importConf(filename)
 
 
 ################################################################################
@@ -153,7 +147,7 @@ class ConfManager(
     # --------------------------------------------------------------------------
     #  ConfManager.importConfPackage:
     # --------------------------------------------------------------------------
-    def importConfPackage(self, file, createIfNotExists=0):
+    def importConfPackage(self, file):
       
       if isinstance(file, str):
         if file.startswith('http://') or file.startswith('https://'):
@@ -163,7 +157,7 @@ class ConfManager(
       files = _fileutil.getZipArchive( file)
       for f in files:
         if not f.get('isdir'):
-          self.importConf(f, createIfNotExists=createIfNotExists)
+          self.importConf(f)
 
 
     # --------------------------------------------------------------------------
@@ -171,43 +165,56 @@ class ConfManager(
     # --------------------------------------------------------------------------
     def getConfXmlFile(self, file):
       if isinstance(file, dict):
-        filename = file['filename']
-        xmlfile = StringIO( file['data'])
-      elif isinstance(file, str) and (file.startswith('http://') or file.startswith('https://')):
-        filename = _fileutil.extractFilename(file)
-        xmlfile = StringIO( self.http_import(file))
+          filename = file['filename']
+          xml = file['data']
+          xmlfile = StringIO( xml)
+      elif isinstance(file, str) and (file.startswith('conf:')):
+          filename = file[file.find(':')+1:]
+          basepath = _repositoryutil.get_system_conf_basepath()
+          path = os.path.join(basepath, filename)
+          r = _repositoryutil.readRepository(self, path)
+          container_id = filename.split('/')[0]
+          container = zopeutil.getObject(self,container_id)
+          if container is not None:
+              l = container.translateRepositoryModel(r)
+              xml = standard.toXmlString(self, l)
+              xml = bytes(xml, "utf-8")
+              xmlfile = io.BytesIO( xml)
+          else:
+              standard.writeError(self,'[getConfXmlFile]: container %s not found'%container_id)
       else:
-        filename = _fileutil.extractFilename(file)
-        xmlfile = open(_fileutil.getOSPath(file), 'rb')
+          filename = _fileutil.extractFilename(file)
+          xmlfile = open(_fileutil.getOSPath(file), 'rb')
       return filename, xmlfile
 
 
     # --------------------------------------------------------------------------
     #  ConfManager.importConf:
     # --------------------------------------------------------------------------
-    def importConf(self, file, createIfNotExists=0, syncIfNecessary=True):
+    def importConf(self, file, syncIfNecessary=True):
       message = ''
       syncNecessary = False
       filename, xmlfile = self.getConfXmlFile( file)
+      standard.writeBlock( self, '[importConf]: filename='+filename)
       if not filename.startswith('._'): # ignore hidden files in ZIP created by MacOSX
         if filename.find('.charfmt.') > 0:
-          self.format_manager.importCharformatXml(xmlfile, createIfNotExists)
-        elif filename.find('.filter.') > 0:
-          self.getFilterManager().importXml(xmlfile, createIfNotExists)
+          self.format_manager.importCharformatXml(xmlfile)
+        elif filename.find('.filter.') > 0 or filename.startswith('filter_manager'):
+          self.getFilterManager().importXml(xmlfile)
         elif filename.find('.metadict.') > 0:
-          self.getMetaobjManager().importMetadictXml(xmlfile, createIfNotExists)
+          self.getMetaobjManager().importMetadictXml(xmlfile)
           syncNecessary = True
-        elif filename.find('.metaobj.') > 0:
-          self.getMetaobjManager().importMetaobjXml(xmlfile, createIfNotExists)
+        elif filename.find('.metaobj.') > 0 or filename.startswith('metaobj_manager'):
+          self.getMetaobjManager().importMetaobjXml(xmlfile)
           syncNecessary = True
-        elif filename.find('.workflow.') > 0:
-          self.getWorkflowManager().importXml(xmlfile, createIfNotExists)
-        elif filename.find('.metacmd.') > 0:
-          self.getMetacmdManager().importXml(xmlfile, createIfNotExists)
+        elif filename.find('.workflow.') > 0 or filename.startswith('workflow_manager'):
+          self.getWorkflowManager().importXml(xmlfile)
+        elif filename.find('.metacmd.') > 0 or filename.startswith('metacmd_manager'):
+          self.getMetacmdManager().importXml(xmlfile)
         elif filename.find('.langdict.') > 0:
-          _multilangmanager.importXml(self, xmlfile, createIfNotExists)
+          _multilangmanager.importXml(self, xmlfile)
         elif filename.find('.textfmt.') > 0:
-          self.format_manager.importTextformatXml(xmlfile, createIfNotExists)
+          self.format_manager.importTextformatXml(xmlfile)
         xmlfile.close()
       if syncIfNecessary and syncNecessary:
         self.synchronizeObjAttrs()
@@ -231,42 +238,18 @@ class ConfManager(
     #  Returns configuration-files from $ZMS_HOME/import-Folder
     # --------------------------------------------------------------------------
     security.declareProtected('ZMS Administrator', 'getConfFiles')
-    def getConfFiles(self, remote=True, pattern=None, REQUEST=None, RESPONSE=None):
+    def getConfFiles(self, pattern=None, REQUEST=None, RESPONSE=None):
       """
       ConfManager.getConfFiles
       """
       filenames = {}
-      filepaths = [
-        standard.getINSTANCE_HOME()+'/etc/zms/import/',
-        package_home(globals())+'/import/',]
-      for filepath in filepaths:
-        filename = os.path.join(filepath, 'configure.zcml')
-        if os.path.exists(filename):
-          standard.writeBlock( self, "[getConfFiles]: Read from "+filename)
-          xmldoc = xml.dom.minidom.parse(filename)
-          for source in xmldoc.getElementsByTagName('source'):
-            location = source.attributes['location'].value
-            if location.startswith('http://') or location.startswith('https://'):
-              if remote:
-                remote_location = location+'configure.zcml'
-                try:
-                  remote_xml = standard.http_import(self, remote_location)
-                  remote_xmldoc = xml.dom.minidom.parseString(remote_xml)
-                  for remote_file in remote_xmldoc.getElementsByTagName('file'):
-                    filename = remote_file.attributes['id'].value
-                    if filename not in filenames:
-                      filenames[location+filename] = filename+' ('+remote_file.attributes['title'].value+')'
-                except:
-                  standard.writeError(self, "[getConfFiles]: can't get conf-files from remote URL=%s"%remote_location)
-            else:
-              for filepath in filepaths:
-                if os.path.exists( filepath):
-                  for filename in os.listdir(filepath + location):
-                    path = filepath + filename
-                    if os.path.isfile(path):
-                      if path not in filenames:
-                        filenames[path] = filename
-          break
+      # Import-Folder.
+      filepath = package_home(globals())+'/import/'
+      for filename in os.listdir(filepath):
+          path = filepath + filename
+          if os.path.isfile(path):
+              if path not in filenames:
+                  filenames[path] = filename
       # Filter.
       if pattern is not None:
         lk = list(filenames)
@@ -280,19 +263,27 @@ class ConfManager(
               i = len(v)
             v = v[:v.find(pattern)]+v[i:]
             filenames[k] = v
+      # Repository.
+      basepath = _repositoryutil.get_system_conf_basepath()
+      for filename in os.listdir(basepath):
+          path = os.path.join(basepath, filename)
+          if os.path.isdir(path):
+              if pattern is None or filename.startswith(pattern[1:-1]):
+                  r = _repositoryutil.readRepository(self, path, deep=False)
+                  for k in r:
+                      v = r[k]
+                      filenames['conf:%s/%s'%(filename,k)] = '%s-%s'%(k,v.get('revision','0.0.0'))   
       # Return.
-      if REQUEST is not None and \
-         RESPONSE is not None:
-        RESPONSE = REQUEST.RESPONSE
-        content_type = 'text/xml; charset=utf-8'
-        filename = 'getConfFiles.xml'
-        RESPONSE.setHeader('Content-Type', content_type)
-        RESPONSE.setHeader('Content-Disposition', 'inline;filename="%s"'%filename)
-        RESPONSE.setHeader('Cache-Control', 'no-cache')
-        RESPONSE.setHeader('Pragma', 'no-cache')
-        return self.getXmlHeader() + self.toXmlString( filenames)
-      else:
-        return filenames
+      if REQUEST is not None and RESPONSE is not None:
+          RESPONSE = REQUEST.RESPONSE
+          content_type = 'text/xml; charset=utf-8'
+          filename = 'getConfFiles.xml'
+          RESPONSE.setHeader('Content-Type', content_type)
+          RESPONSE.setHeader('Content-Disposition', 'inline;filename="%s"'%filename)
+          RESPONSE.setHeader('Cache-Control', 'no-cache')
+          RESPONSE.setHeader('Pragma', 'no-cache')
+          return self.getXmlHeader() + self.toXmlString( filenames)
+      return filenames
 
 
     """
@@ -346,7 +337,7 @@ class ConfManager(
     # --------------------------------------------------------------------------
     def getThemes(self):
       obs = []
-      for ob in self.getHome().objectValues():
+      for ob in standard.distinct_list(self.getHome().objectValues() + self.getAbsoluteHome().objectValues()):
         if isinstance(ob, Folder) and 'standard_html' in ob.objectIds():
           obs.append(ob)
       return obs
@@ -490,17 +481,18 @@ class ConfManager(
         {'key':'ZMS.http_accept_language','title':'Http Accept Language','desc':'ZMS can use the HTTP_ACCEPT_LANGUAGE request-parameter to determine initial language.','datatype':'boolean'},
         {'key':'ZMS.export.domains','title':'Export resources from external domains','desc':'ZMS can export resources from external domains in the HTML export.','datatype':'string'},
         {'key':'ZMS.export.pathhandler','title':'Export XHTML with decl. Document Ids','desc':'Please activate this option, if you would like to generate declarative document URLs for static XHTML-Export: /documentname/index_eng.html will be transformed to /documentname.html','datatype':'boolean'},
-        {'key':'ZMS.export.xml.tidy','title':'Export with HTML Tidy Library','desc':'ZMS can use the HTML Tidy Library to process inline (X)HTML in the XML export to avoid CDATA-sections.','datatype':'boolean'},
         {'key':'ZMS.localfs_read','title':'LocalFS read','desc':'List of directories with permission for LocalFS read (semicolon separated).','datatype':'string','default':''},
         {'key':'ZMS.localfs_write','title':'LocalFS write','desc':'List of directories with permission for LocalFS write (semicolon separated).','datatype':'string','default':''},
         {'key':'ZMS.logout.href','title':'Logout URL','desc':'URL for logout from ZMS.','datatype':'string','default':''},
+        {'key':'ZMS.register.href','title':'Register URL','desc':'URL for registration for ZMS-permissions.','datatype':'string','default':''},
         {'key':'ZMS.richtext.plugin','title':'Richtext plugin','desc':'Select your preferred richtext plugin','datatype':'string','options':self.getPluginIds(['rte']),'default':'ckeditor'},
         {'key':'ZMS.input.file.plugin','title':'File.upload input','desc':'ZMS can use custom input-fields for file-upload.','datatype':'string','options':['input_file', 'jquery_upload'],'default':'input_file'},
         {'key':'ZMS.input.file.maxlength','title':'File.upload maxlength','desc':'ZMS can limit the maximum upload-file size to the given value (in Bytes).','datatype':'string'},
         {'key':'ZMS.input.image.maxlength','title':'Image.upload maxlength','desc':'ZMS can limit the maximum upload-image size to the given value (in Bytes).','datatype':'string'},
         {'key':'ZMSGraphic.superres','title':'Image superres-attribute','desc':'Super-resolution attribute for ZMS standard image-objects.','datatype':'boolean','default':0},
         {'key':'ZCatalog.TextIndexType','title':'Search with TextIndex-type','desc':'Use specified TextIndex-type (default: ZCTextIndex)','datatype':'string','default':'ZCTextIndex'},
-        {'key':'ZMSIndexZCatalog.onImportObjEvt','title':'Resync ZMSIndex on content import','desc':'Please be aware that activating implicit ZMSIndex-resync on content import can block bigger sites for a while','datatype':'boolean','default':0},
+        {'key':'ZMSIndexZCatalog.ObjectImported','title':'Resync ZMSIndex on content import','desc':'Please be aware that activating implicit ZMSIndex-resync on content import can block bigger sites for a while','datatype':'boolean','default':0},
+        {'key':'ZReferableItem.validateLinkObj','title':'Auto-correct inline-links on save','desc':'Ensure valid inline-links by text-parsing and using ZMSIndex for refreshing target urls on save event','datatype':'boolean','default':1},
       ]
     
     """
@@ -512,7 +504,7 @@ class ConfManager(
       d = self.get_conf_properties()
       if REQUEST is not None:
         import base64
-        prefix = standard.pystr(base64.b64decode(prefix),'utf-8')
+        prefix = str(base64.b64decode(prefix),'utf-8')
         r = {}
         for x in d:
           if x.startswith(prefix+'.'):
@@ -535,7 +527,6 @@ class ConfManager(
     @type key: C{string}
     @return None
     """
-    security.declareProtected('ZMS Administrator', 'delConfProperty')
     def delConfProperty(self, key):
       self.setConfProperty(key, None)
 
@@ -579,12 +570,15 @@ class ConfManager(
         import base64
         try:
           #Py3
-          key = standard.pystr(base64.b64decode(key),'utf-8')
+          key = str(base64.b64decode(key),'utf-8')
         except:
           #Py2
           key = base64.b64decode(key)
-      if key in OFS.misc_.misc_.zms['confdict']:
-        default = OFS.misc_.misc_.zms['confdict'].get(key)
+      try:
+        if key in OFS.misc_.misc_.zms['confdict']:
+          default = OFS.misc_.misc_.zms['confdict'].get(key)
+      except:
+        pass
       value = default
       confdict = self.getConfProperties()
       if key in confdict:
@@ -615,7 +609,6 @@ class ConfManager(
     @type value: C{any}
     @return None
     """
-    security.declareProtected('ZMS Administrator', 'setConfProperty')
     def setConfProperty(self, key, value):
       if key.startswith("Portal"):
         self.clearReqBuff()
@@ -649,14 +642,15 @@ class ConfManager(
       ##### Import ####
       if key == 'Import':
         if btn == 'Import':
-          f = REQUEST['file']
-          createIfNotExists = 1
+          f = REQUEST.get('file')
           if f:
             filename = f.filename
-            self.importConfPackage( f, createIfNotExists)
+            self.importConfPackage(f)
+          elif REQUEST.get('init'):
+            filename = REQUEST.get('init')
+            self.importConfPackage(filename)
           else:
-            filename = REQUEST['init']
-            self.importConfPackage( filename, createIfNotExists)
+            filename = 'ERROR: No File found!'
           message = self.getZMILangStr('MSG_IMPORTED')%('<i>%s</i>'%filename)
       
       ##### History ####
@@ -706,6 +700,9 @@ class ConfManager(
           location = REQUEST['mediadb_location'].strip()
           _mediadb.manage_addMediaDb(self, location)
           message = self.getZMILangStr('MSG_CHANGED')
+        elif btn == 'Change':
+          structure = int(REQUEST['mediadb_structure'])
+          message = _mediadb.manage_structureMediaDb(self,structure)
         elif btn == 'Pack':
           message = _mediadb.manage_packMediaDb(self)
         elif btn == 'Remove':
@@ -736,96 +733,13 @@ class ConfManager(
               portalClient.delConfProperty( k)
           message = self.getZMILangStr('MSG_DELETED')%int(1)
       
-      ##### InstalledProducts ####
-      elif key == 'InstalledProducts':
+      ##### Configuration ####
+      elif key == 'Configuration':
         if btn == 'Change':
           self.setConfProperty('InstalledProducts.lesscss', REQUEST.get('lesscss', ''))
           self.setConfProperty('InstalledProducts.pil.thumbnail.max', REQUEST.get('pil_thumbnail_max', self.getConfProperty('InstalledProducts.pil.thumbnail.max')))
           self.setConfProperty('InstalledProducts.pil.hires.thumbnail.max', REQUEST.get('pil_hires_thumbnail_max', self.getConfProperty('InstalledProducts.pil.hires.thumbnail.max')))
           message = self.getZMILangStr('MSG_CHANGED')
-        elif btn == 'Import':
-          zmsext = REQUEST.get('zmsext', '')
-          # hand over import to Deployment Library if available
-          revobj = self.getMetaobjRevision('zms3.deployment')
-          revreq = '0.2.0'
-          if revobj >= revreq:
-            target = 'manage_deployment'
-            target = self.url_append_params(target, {'zmsext': zmsext})
-            return RESPONSE.redirect(target)
-          # otherwise import now
-          target = 'manage_customize'
-          isProcessed = False
-          try:
-            ZMSExtension  = standard.extutil()
-            filesToImport = ZMSExtension.getFilesToImport(zmsext, self.getDocumentElement())
-            if len(filesToImport)>0:
-              for f in filesToImport:
-                self.importConf(f, createIfNotExists=True, syncIfNecessary=False)
-              self.synchronizeObjAttrs()
-              isProcessed = True
-          except:
-            isProcessed = False
-          if isProcessed:
-            message = self.getZMILangStr('MSG_IMPORTED')%('<code class="alert-success">'+self.str_item(ZMSExtension.getFiles(zmsext))+'</code>')
-            target = self.url_append_params(target, {'manage_tabs_message': message})
-          else:
-            message = self.getZMILangStr('MSG_EXCEPTION') 
-            message += ': <code class="alert-danger">%s</code>'%('No conf files found.')
-            target = self.url_append_params(target, {'manage_tabs_error_message': message})
-            standard.writeError(self, "[ConfManager.manage_customizeSystem] No conf files found.")
-          return RESPONSE.redirect(target + '#%s'%key)
-        elif btn == 'ImportExample':
-          zmsext = REQUEST.get('zmsext', '')
-          target = 'manage_main'
-          ZMSExtension  = standard.extutil()
-          isProcessed = False
-          try:
-            if ZMSExtension.getExample(zmsext) is not None:
-              destination = self.getLinkObj(self.getConfProperty('ZMS.Examples', {}))
-              if destination is None:
-                destination = self.getDocumentElement()
-              ZMSExtension.importExample(zmsext, destination, REQUEST)
-              isProcessed = True
-          except:
-            isProcessed = False
-          if isProcessed:
-            return True
-          else:
-            return False
-        elif btn == 'InstallTheme':
-          zmsext = REQUEST.get('zmsext', '')
-          target = 'manage_main'
-          ZMSExtension  = standard.extutil()
-          standard.writeBlock(self, "[ConfManager.manage_customizeSystem] InstallTheme:"+standard.pystr(zmsext))
-          if ZMSExtension.installTheme(self, zmsext):
-            return True
-          else:
-            return False
-
-      ##### Instance ####
-      elif key == 'Instance':
-        if btn == 'Restart':
-          target = 'manage_customize'
-          
-          if 'ZMANAGED' in os.environ:
-            from Lifetime import shutdown
-            from cgi import escape
-            from .standard import writeBlock
-            try:
-              user = '"%s"' % REQUEST['AUTHENTICATED_USER']
-            except:
-              user = 'unknown user'
-            writeBlock(self, " Restart requested by %s" % user)
-            shutdown(1)
-            message = self.getZMILangStr('ZMS3 instance restarted.')
-            target = self.url_append_params(target, {'manage_tabs_message': message})
-            return """<html>
-            <head><meta HTTP-EQUIV=REFRESH CONTENT="10; URL=%s">
-            </head>
-            <body>Restarting...</body></html>
-            """ % escape(target + '#%s'%key, 1)
-          else:       
-            return "No daemon."
       
       ##### Manager ####
       elif key == 'Manager':
@@ -938,6 +852,28 @@ class ConfManager(
 
     ############################################################################
     ###
+    ###   Component ZMSIndex
+    ###
+    ############################################################################
+
+    def getZMSIndex(self):
+      root = self.getRootElement()
+      index = getattr(root,"zmsindex",None)
+      if index is not None and index.meta_type != "ZMSIndex":
+        root.manage_delObjects(ids=["zmsindex"])
+        self.getMetaobjManager().delMetaobj("com.zms.index")
+        self.getMetaobjManager().delMetaobjAttr("ZMS","zmsindex")
+        index = None
+      if index is None:
+        index = zmsindex.ZMSIndex()
+        root._setObject(index.id, index)
+        index = getattr(root,"zmsindex",None)
+        index.initialize()
+      return index
+
+
+    ############################################################################
+    ###
     ###   Interface IZMSWorkflowProvider: delegate to workflow_manager
     ###
     ############################################################################
@@ -1007,7 +943,7 @@ class ConfManager(
           getProcessIds__roles__ = None
           def getProcessIds(self, sort=True): return []
           importXml__roles__ = None
-          def importXml(self, xml, createIfNotExists=True): pass
+          def importXml(self, xml): pass
         manager = [DefaultManager()]
       return manager[0]
 
@@ -1028,7 +964,7 @@ class ConfManager(
           def getMetaobj(self, id): return None
           def getMetaobjAttrIds(self, meta_id, types=[]): return []
           def getMetaobjAttrs(self, meta_id,  types=[]): return []
-          def getMetaobjAttr(self, id, attr_id): return None
+          def getMetaobjAttr(self, id, attr_id, sync=True): return None
           def getMetaobjAttrIdentifierId(self, meta_id): return None
           def notifyMetaobjAttrAboutValue(self, meta_id, key, value): return None
         manager = DefaultMetaobjManager()
@@ -1175,10 +1111,7 @@ class ConfManager(
       adapter = ZMSZCatalogAdapter.ZMSZCatalogAdapter()
       self._setObject( adapter.id, adapter)
       adapter = getattr(self, adapter.id)
-      adapter.setIds(['ZMSFolder', 'ZMSDocument', 'ZMSFile'])
-      adapter.setAttrIds(['title', 'titlealt', 'attr_dc_description', 'standard_html'])
-      # FIXME ImportError: No module named 'ZMSZCatalogConnector'
-      #adapter.addConnector('ZMSZCatalogConnector')
+      adapter.initialize()
       return adapter
 
 

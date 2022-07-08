@@ -45,7 +45,7 @@ def getobjattrdefault(obj, obj_attr, lang):
     if datatype in range(len(_globals.datatype_map)):
       default = obj_attr.get('default',_globals.datatype_map[datatype][1])
     # Default inactive in untranslated languages.
-    if obj_attr['id'] == 'active' and len(obj.getLangIds()) > 1 and not ( obj.isTranslated(lang,obj.REQUEST) or lang == obj.getPrimaryLanguage() ):
+    if obj_attr['id'] == 'active' and len(obj.getLangIds()) > 1 and not obj.isTranslated(lang,obj.REQUEST):
         default = 0
     if default is not None:
       if datatype in _globals.DT_DATETIMES and default == '{now}':
@@ -56,7 +56,7 @@ def getobjattrdefault(obj, obj_attr, lang):
         v = default.copy()
       else:
         datatype = obj_attr['datatype_key']
-        if default and datatype not in _globals.DT_TEXTS and standard.is_str(default):
+        if default and datatype not in _globals.DT_TEXTS and isinstance(default, str):
           default = standard.dt_exec(obj,default)
         v = default
     return v
@@ -316,7 +316,7 @@ class ObjAttrs(object):
         filteredMetaObjAttrs = [x for x in metaObj['attrs'] if x['id'] == 'format']
         if len(filteredMetaObjAttrs) == 1:
           if REQUEST.get('ZMS_INSERT'):
-            default = standard.dt_exec(self, standard.pystr( filteredMetaObjAttrs[0].get('default', '')))
+            default = standard.dt_exec(self, str( filteredMetaObjAttrs[0].get('default', '')))
             if default:
               fmt = default
             else:
@@ -341,11 +341,11 @@ class ObjAttrs(object):
       
       #-- Image-Fields.
       elif inputtype == 'image':
-        return self.f_selectImage(self, ob=self, fmName=fmName, elName=elName, value=value, key=obj_attr['id'], metaObj=metaObj, lang=lang, REQUEST=REQUEST)
+        return self.f_selectImage(self, ob=self, fmName=fmName, elName=elName, value=_blobfields.MyBlobDelegate(value), key=obj_attr['id'], metaObj=metaObj, lang=lang, REQUEST=REQUEST)
       
       #-- File-Fields.
       elif inputtype == 'file':
-        return self.f_selectFile(self, ob=self, fmName=fmName, elName=elName, value=value, key=obj_attr['id'], metaObj=metaObj, lang=lang, REQUEST=REQUEST)
+        return self.f_selectFile(self, ob=self, fmName=fmName, elName=elName, value=_blobfields.MyBlobDelegate(value), key=obj_attr['id'], metaObj=metaObj, lang=lang, REQUEST=REQUEST)
       
       #-- Password-Fields.
       if inputtype == 'password':
@@ -672,8 +672,6 @@ class ObjAttrs(object):
       obj_vers = self.getObjVersion(REQUEST)
       obj_attrs = self.getObjAttrs()
       now = datetime.datetime.now()
-      if 'preview_time_travel' in REQUEST.keys():
-        now = datetime.datetime.strptime(REQUEST['preview_time_travel'],self.getZMILangStr('SHORTDATE_FMT'))
       for key in ['active', 'attr_active_start', 'attr_active_end']:
         if key in obj_attrs:
           obj_attr = obj_attrs[key]
@@ -1051,7 +1049,8 @@ class ObjAttrs(object):
       id = form_id + '_' + key
       src = self.getTempBlobjPropertyUrl( format=None, REQUEST=REQUEST, RESPONSE=RESPONSE)['src']
       file = getattr( temp_folder, id)
-      orig = self.ImageFromData(file.data, file.title)
+      data = zopeutil.readData(file)
+      orig = self.ImageFromData(data, file.title)
       orig.lang = lang
       if action == 'preview':
         maxdim = self.getConfProperty('InstalledProducts.pil.thumbnail.max')
@@ -1144,7 +1143,11 @@ class ObjAttrs(object):
           rtn['height'] = int(h)
         rtn['content_type'] = file.content_type
         rtn['filename'] = file.title
-        rtn['src'] = self.url_append_params(file.absolute_url(), {'ts':time.time()})
+        fileurl = file.absolute_url()
+        if len(fileurl.split('//')) > 2:
+        # Fix ocasionally missing temp_folder path
+          fileurl = '%s//temp_folder/%s'%(fileurl.rsplit('//',1)[0],fileurl.rsplit('//',1)[1])
+        rtn['src'] = self.url_append_params(fileurl, {'ts':time.time()})
       # Return JSON.
       if format == 'json':
         rtn = self.str_json(rtn)

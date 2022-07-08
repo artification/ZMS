@@ -40,15 +40,15 @@ dtmlExampleCode = '<!-- @deprecated -->'
 pageTemplateExampleCode = \
   '<!DOCTYPE html>\n' + \
   '<html lang="en">\n' + \
-  '<tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>\n' + \
+  '<head tal:replace="structure python:here.zmi_html_head(here,request)">zmi_html_head</head>\n' + \
   '<body class="zmi">\n' + \
-  '<tal:block tal:content="structure python:here.zmi_body_header(here,request)">zmi_body_header</tal:block>\n' + \
+  '<header tal:replace="structure python:here.zmi_body_header(here,request)">zmi_body_header</header>\n' + \
   '<div id="zmi-tab">\n' + \
-  '<tal:block tal:content="structure python:here.zmi_breadcrumbs(here,request)">zmi_breadcrumbs</tal:block>\n' + \
-  '</div><!-- #zmi-tab -->\n' + \
+  '<tal:block tal:replace="structure python:here.zmi_breadcrumbs(here,request)">zmi_breadcrumbs</tal:block >\n' + \
   '<script>\n' + \
   '</script>\n' + \
-  '<tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>\n' + \
+  '<div>\n' + \
+  '<footer tal:replace="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</footer>\n' + \
   '</body>\n' + \
   '</html>\n'
 
@@ -164,6 +164,7 @@ class ZMSMetacmdProvider(
       impl = r['Impl'][0]
       newId = id
       newAcquired = 0
+      newPackage = r.get('package', '')
       newRevision = r.get('revision', '0.0.0')
       newName = r['name']
       newTitle = r.get('title', '')
@@ -176,9 +177,25 @@ class ZMSMetacmdProvider(
       newRoles = r.get('roles',[])
       newNodes = r.get('nodes', '{$}')
       self.delMetacmd(id)
-      return self.setMetacmd(None, newId, newAcquired, newRevision, newName, newTitle, newMethod, \
+      return self.setMetacmd(None, newId, newAcquired, newPackage, newRevision, newName, newTitle, newMethod, \
         newData, newExecution, newDescription, newIconClazz, newMetaTypes, newRoles, \
         newNodes)
+
+
+    """
+    @see IRepositoryProvider
+    """
+    def translateRepositoryModel(self, r):
+      l = []
+      for k in r:
+          v  = r[k]
+          # map implementation
+          impl = v['Impl'][0]
+          v['meta_type'] = impl['type']
+          v['data'] = impl['data']
+          del v['Impl']
+          l.append(v)
+      return l
 
 
     ############################################################################
@@ -190,9 +207,8 @@ class ZMSMetacmdProvider(
     # ------------------------------------------------------------------------------
     #  ZMSMetacmdProvider.importXml
     # ------------------------------------------------------------------------------
-    def _importXml(self, item, createIfNotExists=1):
-      id = item['id']
-      if createIfNotExists == 1:
+    def _importXml(self, item):
+        id = item['id']
         
         # Delete existing object.
         try: self.delMetacmd(id)
@@ -201,6 +217,7 @@ class ZMSMetacmdProvider(
         # Initialize attributes of new object.
         newId = id
         newAcquired = 0
+        newPackage = item.get('package','')
         newRevision = item.get('revision', '0.0.0')
         newName = item['name']
         newTitle = item.get('title', '')
@@ -214,17 +231,17 @@ class ZMSMetacmdProvider(
         newData = item['data']
         
         # Return with new id.
-        return self.setMetacmd(None, newId, newAcquired, newRevision, newName, newTitle, newMethod, \
+        return self.setMetacmd(None, newId, newAcquired, newPackage, newRevision, newName, newTitle, newMethod, \
           newData, newExecution, newDescription, newIconClazz, newMetaTypes, newRoles, \
           newNodes)
 
-    def importXml(self, xml, createIfNotExists=1):
+    def importXml(self, xml):
       v = standard.parseXmlString(xml)
       if isinstance(v, list):
         for item in v:
-          id = self._importXml(item, createIfNotExists)
+          id = self._importXml(item)
       else:
-        id = self._importXml(v, createIfNotExists)
+        id = self._importXml(v)
 
 
     # ------------------------------------------------------------------------------
@@ -261,7 +278,7 @@ class ZMSMetacmdProvider(
     #
     #  Set/add Action specified by given Id.
     # ------------------------------------------------------------------------------
-    def setMetacmd(self, id, newId, newAcquired, newRevision='0.0.0', newName='', newTitle='', newMethod=None, \
+    def setMetacmd(self, id, newId, newAcquired, newPackage='', newRevision='0.0.0', newName='', newTitle='', newMethod=None, \
           newData=None, newExecution=0, newDescription='', newIconClazz='', newMetaTypes=[], \
           newRoles=['ZMSAdministrator'], newNodes='{$}'):
       
@@ -274,6 +291,7 @@ class ZMSMetacmdProvider(
       # Values.
       new = {}
       new['id'] = newId
+      new['package'] = newPackage
       new['acquired'] = newAcquired
       new['revision'] = newRevision
       new['name'] = newName
@@ -371,9 +389,8 @@ class ZMSMetacmdProvider(
       obs = self.commands
       if sort:
         obs = [self.getMetaCmd(x['id']) for x in obs]
-        obs = [(x['name'], x) for x in obs if x is not None]
-        obs = sorted(obs)
-        obs = [x[1] for x in obs]
+        obs = [x for x in obs if x]
+        obs = sorted(obs,key=lambda x: x['name'])
       ids = [x['id'] for x in obs]
       return ids
 
@@ -384,7 +401,7 @@ class ZMSMetacmdProvider(
     #  Returns list of actions.
     # --------------------------------------------------------------------------
     def getMetaCmds(self, context=None, stereotype='', sort=True):
-      stereotypes = {'insert':'manage_add','tab':'manage_tab','repository':'manage_repository'}
+      stereotypes = {'insert':'manage_add','tab':'manage_tab','repository':'manage_repository','zcatalog':'manage_zcatalog'}
       metaCmds = []
       portalMasterMetaCmds = None
       for metaCmd in [x for x in self.commands if x['id'].startswith(stereotypes.get(stereotype, ''))]:
@@ -466,6 +483,7 @@ class ZMSMetacmdProvider(
           id = REQUEST['id']
           newId = REQUEST['el_id'].strip()
           newAcquired = 0
+          newPackage = REQUEST.get('el_package', '').strip()
           newRevision = REQUEST.get('el_revision', '').strip()
           newName = REQUEST.get('el_name', '').strip()
           newTitle = REQUEST.get('el_title', '').strip()
@@ -477,8 +495,8 @@ class ZMSMetacmdProvider(
           newMetaTypes = REQUEST.get('el_meta_types', [])
           newRoles = REQUEST.get('el_roles', [])
           newNodes = REQUEST.get('el_nodes', '')
-          id = self.setMetacmd(id, newId, newAcquired, newRevision, newName, newTitle, \
-            newMethod, newData, newExecution, newDescription, newIconClazz, \
+          id = self.setMetacmd(id, newId, newAcquired, newPackage, newRevision, newName, \
+            newTitle, newMethod, newData, newExecution, newDescription, newIconClazz, \
             newMetaTypes, newRoles, newNodes)
           message = self.getZMILangStr('MSG_CHANGED')
         
@@ -548,7 +566,7 @@ class ZMSMetacmdProvider(
             self.importXml(xml=f)
           else:
             filename = REQUEST['init']
-            self.importConf(filename, createIfNotExists=1)
+            self.importConf(filename)
           message = self.getZMILangStr('MSG_IMPORTED')%('<i>%s</i>'%f.filename)
         
         # Insert.
@@ -556,6 +574,7 @@ class ZMSMetacmdProvider(
         elif btn == 'BTN_INSERT':
           newId = REQUEST.get('_id').strip()
           newAcquired = 0
+          newPackage = REQUEST.get('_package', '').strip()
           newRevision = REQUEST.get('_revision', '0.0.0').strip()
           newName = REQUEST.get('_name').strip()
           newTitle = REQUEST.get('_title').strip()
@@ -563,7 +582,7 @@ class ZMSMetacmdProvider(
           newData = None
           newExecution = REQUEST.get('_execution', 0)
           newIconClazz = REQUEST.get('_icon_clazz', '')
-          id = self.setMetacmd(None, newId, newAcquired, newRevision, newName, newTitle, newMethod, newData, newExecution, newIconClazz=newIconClazz)
+          id = self.setMetacmd(None, newId, newAcquired, newPackage, newRevision, newName, newTitle, newMethod, newData, newExecution, newIconClazz=newIconClazz)
           message = self.getZMILangStr('MSG_INSERTED')%id
         
         # Sync with repository.

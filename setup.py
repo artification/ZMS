@@ -34,8 +34,8 @@ def read_version():
     return '.'.join(version_list)
 
 CLASSIFIERS = [
-  'Development Status :: 4 - Beta',
-  'Framework :: Zope :: 4',
+  'Development Status :: 5 - Production/Stable',
+  'Framework :: Zope :: 5',
   'Programming Language :: Python :: 3',
   'Operating System :: OS Independent',
   'Environment :: Web Environment',
@@ -55,16 +55,19 @@ CLASSIFIERS = [
 setup(
   name                  = 'ZMS',
   description           = 'ZMS: Simplified Content Modelling',
-  long_description      = open(os.path.join(setup_path, 'README')).read(),
+  long_description      = open(os.path.join(setup_path, 'README.rst')).read(),
   version               = read_version(),
   author                = 'HOFFMANN+LIEBENBERG in association with SNTL Publishing, Berlin',
   author_email          = 'zms@sntl-publishing.com',
-  url                   = 'http://www.zms-publishing.com',
-  download_url          = 'https://zmslabs.org',
+  url                   = 'https://www.zms-publishing.com',
+  download_url          = 'https://github.com/zms-publishing/ZMS',
   install_requires      = open(os.path.join(setup_path, 'requirements.txt')).readlines(),
   namespace_packages    = ['Products'],
   packages              = ['Products.zms'],
   classifiers           = CLASSIFIERS,
   include_package_data  = True,
   zip_safe              = False,
+  extras_require        = {
+      'zeo' : open(os.path.join(setup_path, 'requirements-zeo.txt')).readlines(),
+  },
 )

@@ -63,9 +63,52 @@ $ZMI.registerReady(function(){
 
 	// Content-Editable ////////////////////////////////////////////////////////
 	if (self.location.href.indexOf('/manage')>0 || self.location.href.indexOf('preview=preview')>0) {
-		$("<style type='text/css'>.contentEditable.zmi-highlight{background-color:#f7f7f9;}</style>").appendTo("head");
+		var hilight_css = `
+			<style type="text/css">
+				body:not(.zmi) .contentEditable.zmi-highlight:hover {
+					cursor:pointer;
+					background:unset !important;
+					box-shadow: 0 0 0 1px black;
+				}
+				body:not(.zmi) .contentEditable.zmi-highlight:hover > * {
+					transform:unset !important;
+				}
+				body:not(.zmi) .contentEditable.zmi-highlight:hover:before {
+					content:" ";
+					width:20px;
+					height:20px;
+					position:absolute;
+					background-color:black;
+					z-index:10;
+					background-image: url("data:image/svg+xml;utf8,<svg width='20' height='20' viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'><circle fill='black' cx='256' cy='256' r='247.66' /><path d='m400 284c0 6.6-5.4 12-12 12h-92v92c0 6.6-5.4 12-12 12h-56c-6.6 0-12-5.4-12-12v-92h-92c-6.6 0-12-5.4-12-12v-56c0-6.6 5.4-12 12-12h92v-92c0-6.6 5.4-12 12-12h56c6.6 0 12 5.4 12 12v92h92c6.6 0 12 5.4 12 12z' fill='white'/></svg>");
+				}
+			</style>`;
+		$('head').append(hilight_css);
+
+		// PREVIEW CONTENTEDITABLE: It is recommended nesting the page content by an <article> element
+		var page = $('.zms-page');
+		var page_href = page.attr("data-absolute-url");
+		var page_container_constructed = false;
+		//debugger;
+		if ( page.closest('article').length > 0 ) {
+			page.closest('article').wrapInner('<div class="contentEditable zms-page" data-absolute-url="'+ page_href +'"></div>');
+			page_container_constructed = true;
+			// console.log('Page = article-Element');
+		} else if ( page.closest('.article').length > 0 ) {
+			page.closest('.article').wrapInner('<div class="contentEditable zms-page" data-absolute-url="'+ page_href +'"></div>');
+			page_container_constructed = true;
+			// console.log('Page = .article-Class');
+		} else {
+			page.siblings().first().wrapInner('<div class="contentEditable zms-page" data-absolute-url="'+ page_href +'"></div>');
+			page_container_constructed = true;
+			console.log('Page = 1st Sibling of Content Container; maybe use article-Element or .article-Class to mark the Content Container');
+		}
+		if ( page_container_constructed == false ) {
+			console.log('Page-Container Not Found: Please Add article-Element or .article-Class to the HTML-Element that is Nesting the Page Content')
+		}
 		$('.contentEditable')
 			.mouseover( function(evt) {
+					evt.stopPropagation();
 					$(this).addClass('zmi-highlight'); 
 				})
 			.mouseout( function(evt) {
@@ -78,7 +121,7 @@ $ZMI.registerReady(function(){
 				}
 				var href = $(this).attr("data-absolute-url");
 				var lang = getZMILang();
-				if (self.location.href.indexOf(href+'/manage_main')>=0) {
+				if (self.location.href.indexOf(href+'/manage_main')>=0 || evt.shiftKey==true) {
 					href += '/manage_properties';
 				}
 				else {
@@ -95,20 +138,11 @@ $ZMI.registerReady(function(){
 					self.location.href = href;
 				}
 				else {
-					href += '_iframe';
-					href += '?lang='+lang;
-					showFancybox({
-						'autoDimensions':false,
-						'hideOnOverlayClick':false,
-						'href':href,
-						'transitionIn':'fade',
-						'transitionOut':'fade',
-						'type':'iframe',
-						'width':819
-					});
+					href += '?lang='+lang +'&preview=contentEditable';
+					window.top.location.href = href;
 				}
 			})
-		.attr( "title", "Click to edit!");
+			.attr( "title", "Click to Edit!\nShift+Click to Properties Menu");
 	}
 
 	// ZMS plugins

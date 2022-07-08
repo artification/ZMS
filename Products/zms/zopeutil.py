@@ -21,6 +21,7 @@ from AccessControl.SecurityInfo import ModuleSecurityInfo
 from Products.ExternalMethod import ExternalMethod
 from Products.PageTemplates import ZopePageTemplate
 from Products.PythonScripts import PythonScript
+import OFS.Image
 import os
 import re
 # Product Imports.
@@ -37,8 +38,6 @@ class MissingArtefactProxy(object):
   icon__roles__=None
   def zmi_icon(self):
     return 'fas fa-skull-crossbones text-danger'
-  def zmi_icon(self):
-    return icon_clazz(self)
   getId__roles__=None
   def getId(self):
     return self.id
@@ -73,21 +72,32 @@ def addObject(container, meta_type, id, title, data, permissions={}):
   Add Zope-object to container.
   """
   if meta_type == 'DTML Document':
+    if not isinstance(data, str):
+      # Enforce to utf-8 text
+      data = standard.pystr(data, encoding='utf-8', errors='replace').encode('utf-8')
     addDTMLDocument( container, id, title, data)
   elif meta_type == 'DTML Method':
+    if not isinstance(data, str):
+      # Enforce to utf-8 text
+      data = standard.pystr(data, encoding='utf-8', errors='replace').encode('utf-8')
     addDTMLMethod( container, id, title, data)
   elif meta_type == 'External Method':
     addExternalMethod( container, id, title, data)
   elif meta_type == 'File':
     addFile( container, id, title, data)
   elif meta_type == 'Image':
+    if isinstance(data, str): # SVG Images
+      data = data.encode('utf-8')
     addImage( container, id, title, data)
   elif meta_type == 'Page Template':
+    if not isinstance(data, str):
+      # Enforce to utf-8 text
+      data = standard.pystr(data, encoding='utf-8', errors='replace').encode('utf-8')
     addPageTemplate( container, id, title, data)
   elif meta_type == 'Script (Python)':
     addPythonScript( container, id, title, data)
   elif meta_type == 'Folder':
-    addFolder( container, id, title, data)
+    addFolder( container, id, title)
   elif meta_type == 'Z SQL Method':
     addZSqlMethod( container, id, title, data)
   initPermissions(container, id, permissions)
@@ -129,50 +139,54 @@ def readData(ob, default=None):
   data = default
   if ob is None and default is not None:
     return default
-  if ob.meta_type in [ 'DTML Document', 'DTML Method', 'Filesystem DTML Document', 'Filesystem DTML Method']:
-    data = ob.raw
-  elif ob.meta_type in [ 'File', 'Filesystem File', 'Filesystem Image', 'Image']:
-    data = ob.data
-    if not standard.is_bytes(data):
-      b = b''
-      while data is not None:
-        b += data.data
-        data = data.next
-      data = b
-  elif ob.meta_type in [ 'Filesystem Page Template', 'Filesystem Script (Python)', 'Page Template', 'Script (Python)']:
-    data = ob.read()
-  elif ob.meta_type in [ 'External Method']:
-    if isinstance(ob,MissingArtefactProxy):
-      return ob.getData()
-    else:
-      context = ob
-      id = ob.getId()
-      while context is not None:
-        m = getExternalMethodModuleName(context, id)
+  try:
+    if ob.meta_type in [ 'DTML Document', 'DTML Method', 'Filesystem DTML Document', 'Filesystem DTML Method']:
+      data = ob.raw
+    elif ob.meta_type in [ 'File', 'Filesystem File', 'Filesystem Image', 'Image']:
+      data = ob.data
+      if not isinstance(data,bytes):
+        b = b''
+        while data is not None:
+          b += data.data
+          data = data.next
+        data = b
+    elif ob.meta_type in [ 'Filesystem Page Template', 'Filesystem Script (Python)', 'Page Template', 'Script (Python)']:
+      data = ob.read()
+    elif ob.meta_type in [ 'External Method']:
+      if isinstance(ob,MissingArtefactProxy):
+        return ob.getData()
+      else:
+        context = ob
+        id = ob.getId()
+        while context is not None:
+          m = getExternalMethodModuleName(context, id)
+          filepath = standard.getINSTANCE_HOME()+'/Extensions/'+m+'.py'
+          if os.path.exists(filepath):
+            break
+          try:
+            context = context.getParentNode()
+          except:
+            context = None
+        if context is None:
+          m = id
         filepath = standard.getINSTANCE_HOME()+'/Extensions/'+m+'.py'
         if os.path.exists(filepath):
-          break
-        try:
-          context = context.getParentNode()
-        except:
-          context = None
-      if context is None:
-        m = id
-      filepath = standard.getINSTANCE_HOME()+'/Extensions/'+m+'.py'
-      if os.path.exists(filepath):
-        f = open(filepath, 'rb')
-        data = standard.pystr(f.read(),encoding='utf-8')
-        f.close()
-  elif ob.meta_type == 'Z SQL Method':
-    lines = []
-    lines.append('<connection>%s</connection>'%ob.connection_id)
-    lines.append('<params>%s</params>'%ob.arguments_src)
-    lines.append('<max_rows>%i</max_rows>'%ob.max_rows_)
-    lines.append('<max_cache>%i</max_cache>'%ob.max_cache_)
-    lines.append('<cache_time>%i</cache_time>'%ob.cache_time_)
-    lines.append(ob.src)
-    data = '\n'.join(lines)
-  return data
+          f = open(filepath, 'rb')
+          data = str(f.read(),encoding='utf-8')
+          f.close()
+    elif ob.meta_type == 'Z SQL Method':
+      lines = []
+      lines.append('<connection>%s</connection>'%ob.connection_id)
+      lines.append('<params>%s</params>'%ob.arguments_src)
+      lines.append('<max_rows>%i</max_rows>'%ob.max_rows_)
+      lines.append('<max_cache>%i</max_cache>'%ob.max_cache_)
+      lines.append('<cache_time>%i</cache_time>'%ob.cache_time_)
+      lines.append(ob.src)
+      data = '\n'.join(lines)
+    return data
+  except:
+    standard.writeError(ob, "[object data not readable]")
+    return default
 
 security.declarePublic('readObject')
 def readObject(container, id, default=None):
@@ -202,17 +216,13 @@ security.declarePublic('initPermissions')
 def initPermissions(container, id, permissions={}):
   """
   Init permissions for Zope-object:
-  - set Proxy-role 'Manager'
-  - set View-permissions to 'Authenticated' and remove acquired permissions for manage-objects.
+  - set Proxy-roles 'Authenticated' and 'Manager'
   """
-  ob = getattr( container, id, None)
+  ob = getObject(container, id)
   if ob is None: return
   
   # apply proxy-roles
   ob._proxy_roles=('Authenticated','Manager')
-  # manage-artefacts need at least view permission
-  if id.find( 'manage_') >= 0:
-    permissions['Authenticated'] = list(set(permissions.get('Authenticated',[]) + ['View']))
   # apply permissions for roles
   role_permissions = []
   for role in permissions:
@@ -220,22 +230,23 @@ def initPermissions(container, id, permissions={}):
     ob.manage_role(role_to_manage=role,permissions=permission)
     role_permissions = list(set(role_permissions+permission))
   # activate all acquired permissions
-  manager_permissions = [x['name'] for x in ob.permissionsOfRole('Manager') if x['selected']=='SELECTED']
+  manager_permissions = [x['name'] for x in ob.permissionsOfRole('Manager')]
   acquired_permissions = [x for x in manager_permissions if x not in role_permissions]
   ob.manage_acquiredPermissions(acquired_permissions)
+  ### Debug Zope object import here on unexpected errors due to (hidden) attrs 
+  # if hasattr(ob, '_owner'):
+    # del ob._owner
 
 def addDTMLMethod(container, id, title, data):
   """
-  Add DTML-Method to container.
-  @deprecated
+  Add DTML-Method to container: deprecated
   """
   container.manage_addDTMLMethod( id, title, data)
   initPermissions(container, id)
 
 def addDTMLDocument(container, id, title, data):
   """
-  Add DTML-Document to container.
-  @deprecated
+  Add DTML-Document to container: deprecated.
   """
   container.manage_addDTMLDocument( id, title, data)
   initPermissions(container, id)
@@ -286,7 +297,7 @@ def addPythonScript(container, id, title, data):
   ob.write( data)
   initPermissions(container, id)
 
-def addFolder(container, id, title, data):
+def addFolder(container, id, title):
   """
   Add Folder to container.
   """
@@ -331,9 +342,9 @@ def addFile(container, id, title, data, content_type=None):
   """
   if content_type is None:
     if type(data) is str:
-      data = standard.pybytes(data,'utf-8')
+      data = bytes(data,'utf-8')
     content_type, enc = standard.guess_content_type(id, data)
-  container.manage_addFile(id=id, title=title, file=data, content_type=content_type)
+  OFS.Image.manage_addFile(container,id=id, title=title, file=data, content_type=content_type)
   ob = getattr( container, id)
   return ob
 
@@ -343,7 +354,7 @@ def addImage(container, id, title, data, content_type=None):
   """
   if content_type is None:
     content_type, enc = standard.guess_content_type(id, data)
-  container.manage_addImage(id=id, title=title, file=data, content_type=content_type)
+  OFS.Image.manage_addImage(container, id=id, title=title, file=data, content_type=content_type)
   ob = getattr( container, id)
   return ob
 

@@ -41,7 +41,7 @@ def parseXmlString(self, file):
   message = ''
   REQUEST = self.REQUEST
   lang = REQUEST.get( 'lang', self.getPrimaryLanguage())
-  v = self.parseXmlString(file)
+  v = standard.parseXmlString(file)
   metaObj = self.getMetaobj(self.meta_id)
   res_id = metaObj['attrs'][0]['id']
   res_abs = self.getObjProperty(res_id, REQUEST)
@@ -61,15 +61,29 @@ def parseXmlString(self, file):
 ################################################################################
 manage_addZMSCustomForm = PageTemplateFile('manage_addzmscustomform', globals()) 
 def manage_addZMSCustom(self, meta_id, lang, _sort_id, btn, REQUEST, RESPONSE):
-  """ manage_addZMSCustom """
+  """
+  Constructor function for adding custom content nodes 
+
+  @param meta_id: the meta-id / type of the new ZMSObject
+  @type meta_id: C{str}
+  @param lang: the language-id.
+  @type lang: C{str}
+  @param _sort_id: the sort value.
+  @type _sort_id: C{int}
+  @param btn: the submitting button value.
+  @type lang: C{str}
+  @param REQUEST: the triggering request
+  @type REQUEST: C{ZPublisher.HTTPRequest}
+  @param RESPONSE: the triggering request
+  @type RESPONSE: C{ZPublisher.HTTPResponse}
+  """
   message = ''
   messagekey = 'manage_tabs_message'
   t0 = time.time()
   target = self.absolute_url()
-  
   if btn == 'BTN_INSERT':
-    
     # Create
+    meta_id = REQUEST.get('ZMS_INSERT',meta_id)
     id_prefix = standard.id_prefix(REQUEST.get('id_prefix', 'e'))
     new_id = self.getNewId(id_prefix)
     globalAttr = self.dGlobalAttrs.get(meta_id, self.dGlobalAttrs['ZMSCustom'])
@@ -83,7 +97,10 @@ def manage_addZMSCustom(self, meta_id, lang, _sort_id, btn, REQUEST, RESPONSE):
       attr_type = attr['type']
       redirect_self = redirect_self or attr_type in self.getMetaobjIds()+['*']
     redirect_self = redirect_self and not REQUEST.get('btn', '') in [ 'BTN_CANCEL', 'BTN_BACK']
-    
+
+    if metaObj['type'] == 'ZMSRecordSet':
+      lang = self.getPrimaryLanguage()
+
     obj = getattr(self, obj.id)
     try:
       # Object State
@@ -144,26 +161,27 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
     def manage_options(self):
       pc = 'e' in [x['id'] for x in self.getMetaobjAttrs(self.meta_id, types=['*'])]
       opts = []
-      opts.append({'label': 'TAB_EDIT',         'action': 'manage_main'})
+      opts.append({'label': 'TAB_EDIT', 'action': 'manage_main'})
       if pc:
         opts.append({'label': 'TAB_PROPERTIES', 'action': 'manage_properties'})
       opts.append({'label': 'TAB_IMPORTEXPORT', 'action': 'manage_importexport'})
-      opts.append({'label': 'TAB_REFERENCES',   'action': 'manage_RefForm'})
+      opts.append({'label': 'TAB_REFERENCES', 'action': 'manage_RefForm'})
       if not self.getAutocommit() or self.getHistory():
-        opts.append({'label': 'TAB_HISTORY',    'action': 'manage_UndoVersionForm'})
+        opts.append({'label': 'TAB_HISTORY', 'action': 'manage_UndoVersionForm'})
       for metaObjAttr in [x for x in self.getMetaobjAttrs(self.meta_id) if x['id'].startswith('manage_tab')]:
-        opt = {'label': metaObjAttr['name'],    'action': 'manage_executeMetacmd', 'alias':metaObjAttr['id'], 'params':{'id':metaObjAttr['id']}}
+        opt = {'label': metaObjAttr['name'], 'action': 'manage_executeMetacmd', 'alias': metaObjAttr['id'], 'params':{'id':metaObjAttr['id']}}
         opts.append(opt)
       for metaCmd in self.getMetaCmds(self, 'tab'):
-        opt = {'label': metaCmd['name'],        'action': 'manage_executeMetacmd', 'alias':metaCmd['id'], 'params':{'id':metaCmd['id']}}
-        opts.append(opt)
+        opts.append({'label': metaCmd['name'], 'action': 'manage_executeMetacmd', 'alias': metaCmd['id'], 'params':{'id':metaCmd['id']}})
       return tuple(opts)
 
     # Management Permissions.
     # -----------------------
+    __viewPermissions__ = (
+        'manage', 'manage_main', 'manage_container', 'manage_workspace', 'manage_menu',
+        'manage_ajaxGetChildNodes',
+        )
     __authorPermissions__ = (
-        'manage', 'manage_main', 'manage_main_iframe', 'manage_container', 'manage_workspace',
-        'manage_menu',
         'manage_addZMSModule',
         'manage_changeRecordSet',
         'manage_properties', 'manage_changeProperties', 'manage_changeTempBlobjProperty',
@@ -172,23 +190,20 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
         'manage_ajaxDragDrop', 'manage_ajaxZMIActions',
         'manage_UndoVersionForm', 'manage_UndoVersion',
         'manage_wfTransition', 'manage_wfTransitionFinalize',
+        'manage_RefForm',
         'manage_userForm', 'manage_user',
         'manage_importexport', 'manage_import', 'manage_export',
         'manage_executeMetacmd',
         )
-    __viewPermissions__ = (
-        'manage_ajaxGetChildNodes',
-        )
     __ac_permissions__=(
-        ('ZMS Author', __authorPermissions__),
         ('View', __viewPermissions__),
+        ('ZMS Author', __authorPermissions__),
         )
 
 
     # Templates.
     # ----------
     manage_properties = PageTemplateFile('zpt/ZMSObject/manage_main', globals())
-    manage_main_iframe = PageTemplateFile('zpt/ZMSObject/manage_main_iframe', globals())
     manage_menu = PageTemplateFile('zpt/object/manage_menu', globals())
     metaobj_recordset_main_grid = PageTemplateFile('zpt/ZMSRecordSet/main_grid', globals())
     metaobj_recordset_main = PageTemplateFile('zpt/ZMSRecordSet/main', globals())
@@ -265,16 +280,34 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
         REQUEST.set('masterMetaObj', masterMetaObj)
         REQUEST.set('masterRow', masterRows[0])
       # init filter from request.
+      index = 0
       for filterIndex in range(100):
         for filterStereotype in ['attr', 'op', 'value']:
           requestkey = 'filter%s%i'%(filterStereotype, filterIndex)
           sessionkey = '%s_%s'%(requestkey, self.id)
-          requestvalue = REQUEST.form.get(requestkey, standard.get_session_value(self,sessionkey, ''))
-          if REQUEST.get('btn')=='BTN_RESET':
-            requestvalue = ''
-          REQUEST.set(requestkey, requestvalue)
-          standard.set_session_value(self,sessionkey, requestvalue)
-      standard.set_session_value(self,'qfilters_%s'%self.id, REQUEST.form.get('qfilters', standard.get_session_value(self,'qfilters_%s'%self.id, 1)))
+          if REQUEST.get('btn') is None:
+            # get value from session 
+            requestvalue = standard.get_session_value(self, sessionkey, '')
+            # set request-value
+            REQUEST.set(requestkey, requestvalue)
+          else:
+            # reset session-value
+            standard.set_session_value(self, sessionkey, '')
+            # get value from request
+            requestvalue = REQUEST.form.get(requestkey, '')
+            # reset value
+            if REQUEST.get('btn') == 'BTN_RESET':
+              requestvalue = ''
+            # set request-/session-values for new index
+            requestkey = 'filter%s%i'%(filterStereotype, index)
+            sessionkey = '%s_%s'%(requestkey, self.id)
+            REQUEST.set(requestkey, requestvalue)
+            standard.set_session_value(self, sessionkey, requestvalue)
+            # increase index
+            if filterStereotype == 'value' and requestvalue != '':
+              index += 1
+      REQUEST.set('qfilters', index + 1)
+      standard.set_session_value(self,'qfilters_%s'%self.id, index + 1)
       # apply filter
       for filterIndex in range(100):
         suffix = '%i_%s'%(filterIndex, self.id)
@@ -346,9 +379,9 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
     #  ZMSCustom.recordSet_Export:
     # --------------------------------------------------------------------------
     security.declareProtected('View', 'recordSet_Export')
-    def recordSet_Export(self, lang, qorder, qorderdir, qindex=[], REQUEST=None, RESPONSE=None):
+    def recordSet_Export(self, lang, qorder, qorderdir, qindex=[], REQUEST=None, RESPONSE=None, mode='xml'):
       """
-      Export record-set to XML.
+      Export record-set to XML or CSV via /recordSet_Export?lang=&qorder=&qorderdir=&mode=csv
       """
       self.recordSet_Init(REQUEST)
       self.recordSet_Filter(REQUEST)
@@ -361,6 +394,41 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
       RESPONSE.setHeader('Content-Type', 'text/xml; charset=utf-8')
       RESPONSE.setHeader('Content-Disposition', 'attachment;filename="recordSet_Export.xml"')
       export = self.getXmlHeader() + self.toXmlString(value, True)
+
+      if mode == 'csv':
+        import csv
+        import io
+        import xmltodict  # Prerequiste: https://github.com/martinblech/xmltodict => $ pip install xmltodict
+
+        xml = xmltodict.parse(export)
+        keys = []
+        rows = []
+
+        if xml['list'] is not None:
+          xmllistitem = xml['list']['item']
+          if type(xml['list']['item']) is not list:
+            # handle one row
+            xmllistitem = [xml['list']['item']]
+          for listitem in xmllistitem:
+            values = {}
+            for dictitem in listitem['dictionary']['item']:
+              key = dictitem.get('@key')
+              if key not in keys:
+                keys.append(key)
+              values[key] = dictitem.get('#text')
+            rows.append(values)
+
+        csvfile = io.StringIO()
+        csvfile_writer = csv.writer(csvfile)
+        csvfile_writer.writerow(keys)
+        for row in rows:
+          values = map(lambda x: row.get(x), keys)
+          csvfile_writer.writerow(values)
+
+        RESPONSE.setHeader('Content-Type', 'text/csv; charset=utf-8')
+        RESPONSE.setHeader('Content-Disposition', 'attachment;filename="recordSet_Export.csv"')
+        return csvfile.getvalue()
+
       return export
 
 
@@ -416,7 +484,7 @@ class ZMSCustom(zmscontainerobject.ZMSContainerObject):
       params = {'lang':lang}
       t0 = time.time()
       
-      if action or btn and btn not in [ 'BTN_CANCEL', 'BTN_BACK']:
+      if (action or btn) and (btn not in ['BTN_CANCEL', 'BTN_BACK']):
         try:
           ##### Object State #####
           self.setObjStateModified(REQUEST)

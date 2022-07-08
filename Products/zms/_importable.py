@@ -51,40 +51,35 @@ def recurse_importContent(self, folder):
   prim_lang = self.getPrimaryLanguage()
   obj_attrs = self.getObjAttrs()
   for key in obj_attrs:
-    obj_attr = self.getObjAttr(key)
-    datatype = obj_attr['datatype_key']
-    if datatype in _globals.DT_BLOBS:
-      for lang in langs:
-        try:
-          if obj_attr['multilang'] or lang==prim_lang:
-            req = {'lang':lang,'preview':'preview'}
-            obj_vers = self.getObjVersion(req)
-            blob = self._getObjAttrValue(obj_attr, obj_vers, lang)
-            if blob is not None:
-              filename = _fileutil.getOSPath('%s/%s'%(folder, blob.filename))
-              standard.writeBlock( self, '[recurse_importContent]: filename=%s'%filename)
-              # Backup properties (otherwise manage_upload sets it).
-              bk = {}
-              for __xml_attr__ in blob.__xml_attrs__:
-                bk[__xml_attr__] = getattr(blob, __xml_attr__, '')
-              # Read file to ZODB.
-              f = open( filename, 'rb')
-              try:
-                blob = _blobfields.createBlobField( self, datatype, file={'data':f,'filename':filename})
-              finally:
-                f.close()
-              # Restore properties.
-              for __xml_attr__ in blob.__xml_attrs__:
-                if bk.get(__xml_attr__, '') not in ['', 'text/x-unknown-content-type']:
-                  setattr(blob, __xml_attr__, bk[__xml_attr__])
-              blob.getFilename() # Normalize filename
-              self.setObjProperty(key, blob, lang)
-        except:
-          standard.writeError(self, "[recurse_importContent]")
+      obj_attr = self.getObjAttr(key)
+      datatype = obj_attr['datatype_key']
+      if datatype in _globals.DT_BLOBS:
+          for lang in langs:
+              if obj_attr['multilang'] or lang==prim_lang:
+                req = {'lang':lang,'preview':'preview'}
+                obj_vers = self.getObjVersion(req)
+                blob = self._getObjAttrValue(obj_attr, obj_vers, lang)
+                if blob is not None:
+                    filename = os.path.join(folder, blob.filename)
+                    if os.path.exists(filename):
+                        standard.writeBlock( self, '[recurse_importContent]: filename=%s'%filename)
+                        # Backup properties (otherwise manage_upload sets it).
+                        bk = {}
+                        for __xml_attr__ in blob.__xml_attrs__:
+                            bk[__xml_attr__] = getattr(blob, __xml_attr__, '')
+                        # Read file to ZODB.
+                        f = open( filename, 'rb')
+                        blob = _blobfields.createBlobField( self, datatype, file={'data':f,'filename':filename})
+                        f.close()
+                        # Restore properties.
+                        for __xml_attr__ in blob.__xml_attrs__:
+                            if bk.get(__xml_attr__, '') not in ['', 'text/x-unknown-content-type']:
+                                setattr(blob, __xml_attr__, bk[__xml_attr__])
+                        blob.getFilename() # Normalize filename
+                        self.setObjProperty(key, blob, lang)
   
   # Commit object.
   self.onChangeObj( self.REQUEST, forced=1)
-  transaction.commit()
   
   # Process children.
   for ob in self.getChildNodes():
@@ -112,7 +107,6 @@ def importContent(self, file):
   
   # Cleanup.
   self.setConfProperty('ZMS.CatalogAwareness.active', catalog_awareness)
-  standard.triggerEvent( self, '*.onImportObjEvt')
   
   # Return imported object.
   return ob
@@ -135,8 +129,17 @@ def importFile(self, file, REQUEST, handler):
   os.mkdir(folder)
   
   # Save to temporary file.
-  filename = _fileutil.getOSPath('%s/%s'%(folder, _fileutil.extractFilename(filename)))
+  filename = os.path.join(folder, _fileutil.extractFilename(filename))
   _fileutil.exportObj(file, filename)
+  
+  # Import ZEXP-file.
+  if _fileutil.extractFileExt(filename) == 'zexp':
+    ob =  self._importObjectFromFile(filename,verify=0)
+    # Remove temporary files.
+    _fileutil.remove(folder, deep=1)
+    # Refresh zcatalog_index
+    standard.triggerEvent( self, '*.ObjectImported')
+    return ob
   
   # Find XML-file.
   if _fileutil.extractFileExt(filename) == 'zip':
@@ -156,7 +159,7 @@ def importFile(self, file, REQUEST, handler):
   
   # Import XML-file.
   standard.writeBlock( self, '[importFile]: filename='+filename)
-  f = standard.pyopen(filename, 'r', encoding='utf-8')
+  f = open(filename, 'r', encoding='utf-8')
   ob = handler(self, f)
   f.close()
   

@@ -3,20 +3,23 @@
 	dummy0 python:here.zmi_page_request(here,request);
 	zmscontext python:here.getSelf();
 	standard modules/Products.zms/standard">
-<tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>
+<head tal:replace="structure python:here.zmi_html_head(here,request)">zmi_html_head</head>
 <body tal:attributes="class python:here.zmi_body_class(id='configuration')">
-<tal:block tal:content="structure python:here.zmi_body_header(here,request)">zmi_body_header</tal:block>
+<header tal:replace="structure python:here.zmi_body_header(here,request)">zmi_body_header</header>
 <div id="zmi-tab">
 <tal:block tal:content="structure python:here.zmi_breadcrumbs(here,request)">zmi_breadcrumbs</tal:block>
 
 <style>
-.zmi .form-horizontal .card.inactive a, 
-.zmi .form-horizontal .card.inactive label span {
-	color:#cccccc;
+.zmi .form-horizontal .card.inactive a {
+	opacity:0.6;
 }
 .zmi .form-horizontal .fieldlist label.control-label {
 	text-align:left; 
-	padding-left:3rem;
+}
+@media (min-width: 768px) {
+	.zmi .form-horizontal .fieldlist label.control-label {
+		padding-left:3rem;
+	}
 }
 .zmi .form-horizontal .fieldlist i,
 .zmi .form-horizontal .column-description i,
@@ -100,7 +103,7 @@ function onAttrTypeChange( el) {
 
 function loadTableEditor(urlparms) {
 	zmiModal('#updateEntity',{title:getZMILangStr('TAB_PROPERTIES')+': '+getZMILangStr('ATTR_TABLE'), width:'90%'});
-	$('#zmiModalupdateEntity .modal-body').html('<div style="margin:1rem auto;text-align:center"><i class="icon-spinner icon-spin fas fa-spinner fa-spin text-primary fa-3x"></i></div>');
+	$('#zmiModalupdateEntity .modal-body').html('<div style="margin:1rem auto;text-align:center"><i class="fas fa-spinner fa-spin text-primary fa-3x"></i></div>');
 	$('button[name=btn][value=BTN_CLOSE]').click(function() {
 			zmiModal("hide");
 			return false;
@@ -231,21 +234,23 @@ function mms_normalize_rows(el_tbody) {
 	<tal:block tal:repeat="table tables">
 	<div tal:attributes="class python:' '.join(['card']+[[''],['inactive']][int(table['type']!='table')])">
 		<div class="card-header btn-collapse">
-			<a class="btn card-toggle" data-toggle="collapse" tal:attributes="href python:'#%s-columns'%table['id']">
+			<a class="btn card-toggle" data-toggle="collapse" title="Show/Hide Table Definition"
+				tal:attributes="href python:'#%s-columns'%table['id']">
 				<i class="fas"></i>
-			</a>
-			<a href="#" tal:attributes="title python:here.getZMILangStr('ATTR_TABLE');
-				onclick python:'javascript:loadTableEditor(urlparams=\'lang=%s&id=%s\')'%(request['lang'],table['id']); ">
 				<i tal:condition="python:table['type']!='intersection'" class="fas fa-th-list"></i>
 				<i tal:condition="python:table['type']=='intersection'" class="fas fa-link"></i>
 				<tal:block tal:content="table/label">table-label</tal:block>
 				(<tal:block tal:content="table/id">table-id</tal:block>)
 			</a>
+			<a href="javascript:;" class="btn btn-primary pull-right rounded-0" title="Edit Table Definition" 
+				tal:attributes="onclick python:'javascript:return loadTableEditor(urlparams=\'lang=%s&id=%s\')'%(request['lang'],table['id']); ">
+				<i class="far fa-edit"></i>
+			</a>
 		</div><!-- .card-header -->
 		<div tal:attributes="id python:'%s-columns'%table['id']; class python:' '.join(['collapse']+[[],['show']][int(table==tables[0])])">
 			<div class="card-body fieldlist">
 				<tal:block tal:repeat="column table/columns">
-					<div class="form-group row">
+					<div class="form-group row nowrap">
 						<label tal:attributes="class python:' '.join(['col-sm-3 col-lg-2 control-label']+[[],['mandatory']][int(column.get('mandatory',0))]);title python:['','mandatory'][int(column.get('mandatory',0))]">
 							<span>
 								<tal:block tal:content="repeat/column/number">number</tal:block>. 
@@ -313,6 +318,6 @@ function mms_normalize_rows(el_tbody) {
 </tal:block>
 
 </div><!-- #zmi-tab -->
-<tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
+<footer tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</footer>
 </body>
 </html>

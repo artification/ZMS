@@ -81,7 +81,7 @@ def getText(nodelist, encoding='utf-8'):
     for childNode in node.childNodes:
       if childNode.nodeType == childNode.TEXT_NODE:
         rc.append(childNode.data)
-  return standard.pystr(''.join(rc).encode(encoding))
+  return ''.join(rc)
 
 # ------------------------------------------------------------------------------
 #  _xmllib.parseString:
@@ -312,7 +312,7 @@ def xmlOnUnknownEndTag(self, sTagName):
         try:
           data = standard.hex2bin(cdata)
         except:
-          data = standard.pybytes(cdata,'utf-8')
+          data = bytes(cdata,'utf-8')
         value['data'] = data
       self.dValueStack.append(value)
 
@@ -454,69 +454,20 @@ def xmlOnUnknownEndTag(self, sTagName):
 def toCdata(self, s, xhtml=False):
   rtn = ''
 
-  # Return Text (HTML) in CDATA as XHTML.
-  from Products.zms import _filtermanager
-  processId = 'tidy'
-  if not xhtml \
-     and self.getConfProperty('ZMS.export.xml.tidy', 0) \
-     and processId in self.getProcessIds():
-
-    # Create temporary folder.
-    folder = tempfile.mktemp()
-    os.mkdir(folder)
-
-    # Save <HTML> to file.
-    filename = _fileutil.getOSPath('%s/xhtml.html' % folder)
-    _fileutil.exportObj(s, filename)
-
-    # Call <HTML>Tidy
-    processOb = self.getProcess(processId)
-    command = processOb.get('command')
-    if command.find('{trans}') >= 0:
-      trans = _fileutil.getOSPath(package_home(globals()) + '/conf/xsl/tidy.html2xhtml.conf')
-      command = command.replace('{trans}', trans)
-    filename = _filtermanager.processCommand(self, filename, command)
-
-    # Read <XHTML> from file.
-    f = open(htmfilename, 'rb')
-    rtn = f.read().strip()
-    f.close()
-
-    # Read Error-Log from file.
-    f = open(logfilename, 'rb')
-    log = f.read().strip()
-    f.close()
-
-    # Remove temporary files.
-    _fileutil.remove(folder, deep=1)
-
-    # Process <XHTML>.
-    prefix = '<p>'
-    if s[:len(prefix)] != prefix and rtn[:len(prefix)] == prefix:
-      rtn = rtn[len(prefix):]
-      suffix = '</p>'
-      if s[-len(suffix):] != suffix and rtn[-len(suffix):] == suffix:
-        rtn = rtn[:-len(suffix)]
-    f.close()
-
-    # Process Error-Log.
-    if log.find('0 errors') < 0:
-      rtn += '<!-- ' + log + '-->'
-
   # Return Text.
-  elif standard.is_str(s) and s.find(' ') < 0 and s.find('<') < 0 and s.find('&') < 0:
+  if isinstance(s, str) and s.find(' ') < 0 and s.find('<') < 0 and s.find('&') < 0:
     rtn = s
 
   # Return Text in CDATA.
   elif s is not None:
-    if standard.is_bytes(s):
-      s = standard.pystr(s)
+    if isinstance(s, bytes):
+      s = s.deocde('utf-8')
     # Hack for invalid characters
     s = s.replace(chr(30), '')
     # Hack for nested CDATA
     s = re.compile(r'\<\!\[CDATA\[(.*?)\]\]\>').sub(r'<!{CDATA{\1}}>', s)
     # Wrap with CDATA
-    rtn = '<![CDATA[%s]]>' % s
+    rtn = '<![CDATA[%s]]>'%s
 
   # Return.
   return rtn
@@ -548,17 +499,19 @@ def toXml(self, value, indentlevel=0, xhtml=False, encoding='utf-8'):
       xml.append(' type="file"')
       xml.append('>')
       data = zopeutil.readData(value)
-      if content_type.startswith('text/') or content_type in ['application/css','application/javascript','image/svg']:
-        data = standard.pystr(data,'utf-8')
       cdata = None
-      # Ensure CDATA is valid.
-      try:
-        cdata = '<![CDATA[%s]]>'%data
-        p = pyexpat.ParserCreate()
-        rv = p.Parse('<?xml version="1.0" encoding="utf-8"?><%s>%s</%s>'%(tagname,cdata,tagname), 1)
-      # Otherwise use binary encoding.
-      except:
-        cdata = standard.bin2hex(standard.pybytes(data))
+      if [x for x in ['text/','application/css','application/javascript','image/svg'] if content_type.startswith(x)]:
+        try:
+          # Ensure CDATA is valid.
+          s = '<![CDATA[%s]]>'%data.decode('utf-8')
+          p = pyexpat.ParserCreate()
+          rv = p.Parse('<?xml version="1.0" encoding="utf-8"?><%s>%s</%s>'%(tagname,s,tagname), 1)
+          cdata = s
+        except:
+          pass
+      # Otherwise hexlify
+      if cdata is None:
+        cdata = data.hex()
       xml.append(cdata)
       xml.append('</%s>' % tagname)
 
@@ -624,7 +577,7 @@ def toXml(self, value, indentlevel=0, xhtml=False, encoding='utf-8'):
         xml.append(toCdata(self, value, xhtml))
 
   # Return xml.
-  return ''.join([standard.pystr(x) for x in xml])
+  return ''.join([str(x) for x in xml])
 
 
 # ------------------------------------------------------------------------------
@@ -661,15 +614,11 @@ def getAttrToXml(self, base_path, data2hex, obj_attr, REQUEST):
 
     #-- Text-Fields
     elif datatype in _globals.DT_TEXTS:
-      request = self.REQUEST
-      request.set('ExtensionPoint.ZReferableItem.getRefObjPath','disabled')
       value = self.validateInlineLinkObj(value)
       xml += toXml(self, value)
       
     #-- Url-Fields
     elif datatype == _globals.DT_URL:
-      request = self.REQUEST
-      request.set('ExtensionPoint.ZReferableItem.getRefObjPath','disabled')
       value = self.validateLinkObj(value)
       xml += toXml(self, value)
     
@@ -815,7 +764,7 @@ class XmlAttrBuilder(object):
       p.EndNamespaceDeclHandler = self.OnEndNamespaceDecl
 
       #### parsing ####
-      if standard.is_bytes(input):
+      if isinstance(input,bytes):
         # input is a string!
         rv = p.Parse(input, 1)
       else:
@@ -897,7 +846,7 @@ class XmlAttrBuilder(object):
         try:
           data = standard.hex2bin(cdata)
         except:
-          data = standard.pybytes(cdata,'utf-8')
+          data = bytes(cdata,'utf-8')
         file = {'data':data, 'filename':filename, 'content_type':content_type}
         objtype = attrs.get('type')
         item = _blobfields.createBlobField(None, objtype, file)
@@ -1051,8 +1000,9 @@ def xmlNodeSet(mNode, sTagName='', iDeep=0):
 def xmlParse(xml):
   """
   Parse arbitrary XML-Structure into dictionary.
-  @param data: the xml
-  @type data: C{str} or C{StringIO}
+
+  @param xml: xml data
+  @type xml: C{str} or C{StringIO}
   @return: Dictionary of XML-Structure.
   @rtype: C{dict}
   """

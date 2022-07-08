@@ -75,7 +75,8 @@ class ZMSFilterManager(
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     __administratorPermissions__ = (
         'manage_main',
-        'manage_change',
+        'manage_changeFilter',
+        'manage_changeProcess',
         )
     __ac_permissions__=(
         ('ZMS Administrator', __administratorPermissions__),
@@ -98,13 +99,13 @@ class ZMSFilterManager(
             self.setFilterProcess(x['id'], index, p['id'], p['file'])
             index += 1
         except:
-          standard.writeError(self,'can\'t __init__ filter: %s'%standard.pystr(x))
+          standard.writeError(self,'can\'t __init__ filter: %s'%str(x))
       self.processes = {}
       for x in processes:
         try:
           self.setProcess(None, x['id'], x['acquired'], x['name'], x['type'], x['command'])
         except:
-          standard.writeError(self,'can\'t __init__ process: %s'%standard.pystr(x))
+          standard.writeError(self,'can\'t __init__ process: %s'%str(x))
 
 
     ############################################################################
@@ -204,7 +205,7 @@ class ZMSFilterManager(
     #  importXml
     # ------------------------------------------------------------------------------
     
-    def _importXml(self, item, createIfNotExists=True):
+    def _importXml(self, item):
       itemType = item.get('type')
       itemOb = item.get('value')
       if itemType == 'filter':
@@ -216,10 +217,9 @@ class ZMSFilterManager(
         newDescription = itemOb.get('description', '')
         newRoles = itemOb.get('roles', [])
         newMetaTypes = itemOb.get('meta_types', [])
-        if createIfNotExists:
-          self.setFilter(None, newId, newAcquired, newName, newFormat, newContentType, newDescription, newRoles, newMetaTypes)
-          index = 0
-          for process in itemOb.get('processes', []):
+        self.setFilter(None, newId, newAcquired, newName, newFormat, newContentType, newDescription, newRoles, newMetaTypes)
+        index = 0
+        for process in itemOb.get('processes', []):
             newProcessId = process.get('id')
             newProcessFile = process.get('file')
             self.setFilterProcess(newId, index, newProcessId, newProcessFile)
@@ -230,18 +230,17 @@ class ZMSFilterManager(
         newName = itemOb.get('name')
         newType = itemOb.get('type', 'process')
         newCommand = itemOb.get('command')
-        if createIfNotExists:
-          self.setProcess(None, newId, newAcquired, newName, newType, newCommand)
+        self.setProcess(None, newId, newAcquired, newName, newType, newCommand)
       else:
         standard.writeError(self, "[_importXml]: Unknown type >%s<"%itemType)
     
-    def importXml(self, xml, createIfNotExists=True):
+    def importXml(self, xml):
       v = standard.parseXmlString(xml)
       if isinstance(v, list):
         for item in v:
-          id = self._importXml(item, createIfNotExists)
+          id = self._importXml(item)
       else:
-        id = self._importXml(v, createIfNotExists)
+        id = self._importXml(v)
     
     # ------------------------------------------------------------------------------
     #  exportXml
@@ -253,6 +252,13 @@ class ZMSFilterManager(
       for id in self.getFilterIds():
         if id in ids or len(ids) == 0:
           ob = self.getFilter(id).copy()
+          ob['processes'] = []
+          for fp in self.getFilterProcesses(id):
+            p = {}
+            p['id'] = fp['id']
+            if 'file'in fp:
+              p['file'] = fp['file']
+            ob['processes'].append(fp)
           value.append({'type':'filter','value':ob})
           filterIds.append(id)
       for id in self.getProcessIds():
@@ -286,7 +292,7 @@ class ZMSFilterManager(
       ids = list(obs)
       portalMaster = self.getPortalMaster()
       if portalMaster is not None:
-        ids = list(set(ids+portalMaster.getProcessIds()))
+        ids = list(set(ids+portalMaster.getFilterManager().getProcessIds()))
       if sort:
         ids = sorted(ids,key=lambda x:self.getProcess(x)['name'])
       return ids
@@ -305,18 +311,17 @@ class ZMSFilterManager(
         # Acquire from parent.
         portalMaster = self.getPortalMaster()
         if portalMaster is not None:
-          if id in portalMaster.getProcessIds():
-            process = portalMaster.getProcess(id)
+          if id in portalMaster.getFilterManager().getProcessIds():
+            process = portalMaster.getFilterManager().getProcess(id)
             process['acquired'] = 1
+            return process
       process['id'] = id
       process['name'] = process.get('name',process['id'])
       # Synchronize type.
-      try:
-        container = self.getHome()
-        ob = zopeutil.getObject( container, process['id'])
+      ob = zopeutil.getObject( self, process['id'])
+      if ob is not None:
+        process['ob'] = ob
         process['command'] = zopeutil.readData( ob)
-      except:
-        pass
       return process
 
 
@@ -328,8 +333,11 @@ class ZMSFilterManager(
     def getFilterIds(self, sort=True):
       obs = self.filters
       ids = list(obs)
+      portalMaster = self.getPortalMaster()
+      if portalMaster is not None:
+        ids = list(set(ids+portalMaster.getFilterManager().getFilterIds()))
       if sort:
-        ids = sorted(ids,key=lambda x:self.getProcess(x)['name'])
+        ids = sorted(ids,key=lambda x:self.getFilter(x)['name'])
       return ids
 
 
@@ -343,12 +351,13 @@ class ZMSFilterManager(
       ob = {}
       if id in obs:
         ob = obs.get( id).copy()
-      # Acquire from parent.
-      if ob.get('acquired', 0) == 1:
+      else:
+        # Acquire from parent.
         portalMaster = self.getPortalMaster()
         if portalMaster is not None:
-          ob = portalMaster.getFilter(id)
+          ob = portalMaster.getFilterManager().getFilter(id)
           ob['acquired'] = 1
+          return ob
       ob['id'] = id
       return ob
 
@@ -441,9 +450,10 @@ class ZMSFilterManager(
           ob['file_filename'] = '.'.join(f.getId().split('.')[2:])
           ob['file_content_type'] = f.getContentType()
           ob['file_size'] = f.get_size()
-        p = self.getProcess(ob['id'])
-        if p is not None:
-          obs.append( ob)
+        if ob['id']:
+          p = self.getProcess(ob['id'])
+          if p is not None:
+            obs.append( ob)
         index += 1
       return obs
 
@@ -620,7 +630,7 @@ class ZMSFilterManager(
           self.importXml(xml=f)
         else:
           filename = REQUEST['init']
-          self.importConf(filename, createIfNotExists=True)
+          self.importConf(filename)
         message = self.getZMILangStr('MSG_IMPORTED')%('<em>%s</em>'%filename)
       
       # Insert.
@@ -689,7 +699,7 @@ class ZMSFilterManager(
       zopeutil.removeObject(self, newId)
       # Insert Zope-Object.
       if isinstance(newCommand,_blobfields.MyBlob): newCommand = newCommand.getData()
-      if standard.is_str(newCommand): newCommand = newCommand.replace('\r', '')
+      if isinstance(newCommand, str): newCommand = newCommand.replace('\r', '')
       zopeutil.addObject(self, newType, newId, newName, newCommand)
       # Set.
       obs = self.processes
@@ -734,7 +744,7 @@ class ZMSFilterManager(
       # Change.
       # -------
       if btn == 'BTN_SAVE':
-        newId = REQUEST.get('inindex').strip()
+        newId = REQUEST.get('inpId').strip()
         newAcquired = 0
         newName = REQUEST.get('inpName').strip()
         newType = REQUEST.get('inpType').strip()
@@ -764,7 +774,7 @@ class ZMSFilterManager(
           self.importXml(xml=f)
         else:
           filename = REQUEST['init']
-          self.importConf(filename, createIfNotExists=True)
+          self.importConf(filename)
         message = self.getZMILangStr('MSG_IMPORTED')%('<em>%s</em>'%filename)
 
       # Insert.

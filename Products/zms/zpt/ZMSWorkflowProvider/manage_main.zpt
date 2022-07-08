@@ -6,10 +6,10 @@
 ><tal:block tal:condition="not:python:standard.get_session_value(here,'zmi-manage-system',0)==1"
 ><!DOCTYPE html>
 <html lang="en" tal:define="zmscontext python:here.getSelf(); standard modules/Products.zms/standard">
-<tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>
+<head tal:replace="structure python:here.zmi_html_head(here,request)">zmi_html_head</head>
 
 <body tal:attributes="class python:here.zmi_body_class(id='workflow_manager_main config')">
-<tal:block tal:content="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</tal:block>
+<header tal:replace="structure python:here.zmi_body_header(here,request,options=here.customize_manage_options())">zmi_body_header</header>
 
 <div id="zmi-tab">
 
@@ -311,7 +311,7 @@
 				</tal:block>
 				<tal:block tal:condition="python:ob is not None">
 					<input type="hidden" name="inpType" tal:attributes="value ob/meta_type"/>
-					<tal:block tal:content="structure python:here.zmi_ace_editor(here,request,name='inpData',ob=ob)">
+					<tal:block tal:content="structure python:here.zmi_ace_editor(here,request,name='inpData',id='wftransition_%s'%(ob.getId()),ob=ob)">
 						ACE Editor
 					</tal:block>
 				</tal:block>
@@ -340,7 +340,7 @@
 			<div class="form-group row newIconClazz">
 				<label for="newIconClazz" class="col-sm-2 control-label"><span>Icon</span></label>
 				<div class="col-sm-10">
-					<input class="form-control form-control-sm zmi-input-icon-clazz" type="text" id="newIconClazz" name="newIconClazz" />
+					<input placeholder="Enter Fontawesome class e.g.: fas fa-edit text-secondary" class="form-control form-control-sm zmi-input-icon-clazz" type="text" id="newIconClazz" name="newIconClazz" value="fas fa-edit text-secondary" />
 				</div>
 			</div><!-- .form-group -->
 			<div class="form-group row">
@@ -385,62 +385,25 @@
 </div><!-- #insertTransition -->
 
 
-<nav>
+<nav id="subTab">
 <ul class="nav nav-tabs" role="tablist" tal:attributes="title python:here.getRevision()">
-		<li class="nav-item"><a class="nav-link" href="#properties" data-toggle="tab" 
-			tal:attributes="class python:request.get('key','properties')=='properties' and 'nav-link active show' or 'nav-link'"
-			tal:content="python:here.getZMILangStr('TAB_WORKFLOW_ASSIGNMENT')">Workflow-Assignment</a></li>
 		<li class="nav-item"><a class="nav-link" href="#edit" data-toggle="tab" 
-			tal:attributes="class python:request.get('key',None)=='edit' and 'nav-link active show' or 'nav-link'"
+			tal:attributes="class python:request.get('key','edit')=='edit' and 'nav-link active show' or 'nav-link'"
 			tal:content="python:here.getZMILangStr('TAB_WORKFLOW_MODEL')">Workflow-Model</a></li>
+		<li class="nav-item"><a class="nav-link" href="#properties" data-toggle="tab" 
+			tal:attributes="class python:request.get('key')=='properties' and 'nav-link active show' or 'nav-link'"
+			tal:content="python:here.getZMILangStr('TAB_WORKFLOW_ASSIGNMENT')">Workflow-Assignment</a></li>
 		<li class="nav-item"><a class="nav-link" href="#history" data-toggle="tab" 
-			tal:attributes="class python:request.get('key',None)=='history' and 'nav-link active show' or 'nav-link'"
+			tal:attributes="class python:request.get('key')=='history' and 'nav-link active show' or 'nav-link'"
 			tal:content="python:here.getZMILangStr('TAB_WORKFLOW_VERSION')">Version Control</a></li>
 </ul>
 </nav>
 
 <div class="tab-content">
 
-<div class="tab-pane fade show active" id="properties" role="tabpanel"
-	tal:attributes="class python:request.get('key','properties')=='properties' and 'tab-pane fade show active' or 'tab-pane fade'"
-	><form class="card form-horizontal" name="properties_form" action="manage_changeWorkflow" method="post" enctype="multipart/form-data">
-		<input type="hidden" name="lang" tal:attributes="value request/lang" />
-		<input type="hidden" name="key" value="properties" />
-		<div class="form-group row" id="tr_revision">
-			<label for="revision" class="col-sm-2 control-label mandatory"><span tal:content="python:here.getZMILangStr('ATTR_VERSION')">Version</span></label>
-			<div class="col-md-6 col-sm-8 col-xs-10">
-				<input class="form-control" name="revision" type="text" size="8" tal:attributes="value python:here.getRevision()" />
-			</div>
-		</div><!-- .form-group -->
-		<div class="form-group row " id="tr_workflow" style="align-items:baseline">
-			<label for="workflow" class="col-sm-2 control-label mandatory"><span tal:content="python:here.getZMILangStr('ATTR_ACTIVE')">Active</span></label>
-			<div class="col-sm-10">
-				<div class="row">
-					<div class="col-1">
-						<span class="btn btn-secondary"><input type="checkbox" id="workflow" name="workflow:int" value="1" tal:attributes="checked python:['','checked'][int(not here.getAutocommit())]"/></span>
-					</div>
-					<div class="col-md-6 col-sm-8 col-xs-10 pr-0">
-						<textarea class="form-control url-input" name="nodes" tal:content="python:'\n'.join(here.operator_getattr(here,'nodes',['{$}']))"></textarea>
-					</div>
-				</div>
-			</div>
-		</div><!-- .form-group -->
-		<div class="form-row">
-			<div class="col-sm-2"></div>
-			<div class="col-sm-10 controls my-5">
-				<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
-				<a class="btn btn-secondary mx-1" tal:attributes="href python:'javascript:if(confirm(getZMILangStr(\'MSG_CONFIRM_DELOBJ\'))){self.location.href=\'manage_changeWorkflow?lang=%s&btn=%s\'}'%(request['lang'],here.getZMILangStr('BTN_CLEAR')); title python:here.getZMILangStr('BTN_CLEAR')+'...'"><tal:block tal:content="python:here.getZMILangStr('BTN_DELETE')"></tal:block></a>
-				<span class="btn btn-secondary mx-1" tal:attributes="title python:here.getZMILangStr('BTN_IMPORT')+'...'" onclick="zmiModal('#importConf',{title:$(this).text(),closeText:getZMILangStr('BTN_CLOSE')});return false;"><i class="fas fa-upload"></i> <tal:block tal:content="python:here.getZMILangStr('BTN_IMPORT')"></tal:block></span>
-				<a class="btn btn-secondary mx-1" tal:attributes="href python:'manage_changeWorkflow?lang=%s&btn=BTN_EXPORT'%request['lang']; title python:here.getZMILangStr('BTN_EXPORT')+'...'"><i class="fas fa-download"></i> <tal:block tal:content="python:here.getZMILangStr('BTN_EXPORT')"></tal:block></a>
-			</div>
-		</div>
-	</form>
-</div><!--#properties -->
-
-
-<div class="tab-pane fade" id="edit" role="tabpanel"
-	tal:attributes="class python:request.get('key',None)=='edit' and 'tab-pane fade show active' or 'tab-pane fade'"
-	><form class="card form-horizontal activities border-bottom-0" name="edit_form" action="manage_changeActivities" method="post" enctype="multipart/form-data" 
+<div class="tab-pane fade card show active" id="edit" role="tabpanel"
+	tal:attributes="class python:request.get('key','edit')=='edit' and 'tab-pane fade card show active' or 'tab-pane card fade'"
+	><form class="form-horizontal activities border-bottom-0" name="edit_form" action="manage_changeActivities" method="post" enctype="multipart/form-data" 
 		tal:define="global activityIds python:here.getActivityIds()">
 		<input type="hidden" name="lang" tal:attributes="value request/lang"/>
 		<input type="hidden" name="key" value="edit" />
@@ -495,8 +458,8 @@
 		</tal:block>
 		</table>
 	</form>
-
-	<form class="card form-horizontal transitions" action="manage_changeTransitions" method="post" enctype="multipart/form-data" tal:define="global transitionIds python:here.getTransitionIds()">
+	<hr />
+	<form class="form-horizontal transitions" action="manage_changeTransitions" method="post" enctype="multipart/form-data" tal:define="global transitionIds python:here.getTransitionIds()">
 		<input type="hidden" name="lang" tal:attributes="value request/lang" />
 		<input type="hidden" name="key" value="edit" />
 		<table class="table zmi-sortable">
@@ -543,8 +506,9 @@
 							<td>
 								<div tal:attributes="class python:' '.join(['transition']+[[],['state']][int(ob is None)]+[[],['action']][int(len(transition['from'])+len(transition['to'])==0)])">
 									<i tal:attributes="class python:transition.get('icon_clazz','far fa-square')"></i>
-									<a tal:attributes="href python:'?lang=%s&key=edit&id=%s'%(request['lang'],transition['id'])">
-										<tal:block tal:content="python:transition['name']">the name</tal:block>
+									<a tal:attributes="href python:'?lang=%s&key=edit&id=%s'%(request['lang'],transition['id'])"
+										tal:content="python:transition['name']" data-turbolinks="false">
+										the name<
 									</a>
 									<ul class="performer smaller" tal:condition="python:transition['performer']">
 										<li tal:repeat="performer python:transition['performer']" tal:content="python:performer">performer</li>
@@ -574,10 +538,45 @@
 	</form>
 </div><! --#edit -->
 
+<div class="tab-pane card fade" id="properties" role="tabpanel"
+	tal:attributes="class python:request.get('key')=='properties' and 'tab-pane card fade show active' or 'tab-pane card  fade'"
+	><form class="form-horizontal" name="properties_form" action="manage_changeWorkflow" method="post" enctype="multipart/form-data">
+		<input type="hidden" name="lang" tal:attributes="value request/lang" />
+		<input type="hidden" name="key" value="properties" />
+		<div class="form-group row" id="tr_revision">
+			<label for="revision" class="col-sm-2 control-label mandatory"><span tal:content="python:here.getZMILangStr('ATTR_VERSION')">Version</span></label>
+			<div class="col-md-6 col-sm-8 col-xs-10">
+				<input class="form-control" name="revision" type="text" size="8" tal:attributes="value python:here.getRevision()" />
+			</div>
+		</div><!-- .form-group -->
+		<div class="form-group row " id="tr_workflow" style="align-items:baseline">
+			<label for="workflow" class="col-sm-2 control-label mandatory"><span tal:content="python:here.getZMILangStr('ATTR_ACTIVE')">Active</span></label>
+			<div class="col-sm-10">
+				<div class="row">
+					<div class="col-1">
+						<span class="btn btn-secondary"><input type="checkbox" id="workflow" name="workflow:int" value="1" tal:attributes="checked python:['','checked'][int(not here.getAutocommit())]"/></span>
+					</div>
+					<div class="col-md-6 col-sm-8 col-xs-10 pr-0">
+						<textarea class="form-control url-input" name="nodes" tal:content="python:'\n'.join(here.operator_getattr(here,'nodes',['{$}']))"></textarea>
+					</div>
+				</div>
+			</div>
+		</div><!-- .form-group -->
+		<div class="form-row">
+			<div class="col-sm-2"></div>
+			<div class="col-sm-10 controls my-5">
+				<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE"><i class="fas fa-save"></i> <tal:block tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</tal:block></button>
+				<a class="btn btn-secondary mx-1" tal:attributes="href python:'javascript:if(confirm(getZMILangStr(\'MSG_CONFIRM_DELOBJ\'))){self.location.href=\'manage_changeWorkflow?lang=%s&btn=%s\'}'%(request['lang'],'BTN_CLEAR'); title python:here.getZMILangStr('BTN_CLEAR')+'...'"><i class="fas fa-times"></i> <tal:block tal:content="python:here.getZMILangStr('BTN_CLEAR')"></tal:block></a>
+				<span class="btn btn-secondary mx-1" tal:attributes="title python:here.getZMILangStr('BTN_IMPORT')+'...'" onclick="zmiModal('#importConf',{title:$(this).text(),closeText:getZMILangStr('BTN_CLOSE')});return false;"><i class="fas fa-upload"></i> <tal:block tal:content="python:here.getZMILangStr('BTN_IMPORT')"></tal:block></span>
+				<a class="btn btn-secondary mx-1" download="download" tal:attributes="href python:'manage_changeWorkflow?lang=%s&btn=BTN_EXPORT'%request['lang']; title python:here.getZMILangStr('BTN_EXPORT')+'...'" download="download"><i class="fas fa-download"></i> <tal:block tal:content="python:here.getZMILangStr('BTN_EXPORT')"></tal:block></a>
+			</div>
+		</div>
+	</form>
+</div><!--#properties -->
 
-<div class="tab-pane fade" id="history"
-	tal:attributes="class python:request.get('key',None)=='history' and 'tab-pane fade show active' or 'tab-pane fade'"
-	><form class="card form-horizontal" title="History: Activate or deactivate the integrated history-mechanism." 
+<div class="tab-pane card fade" id="history"
+	tal:attributes="class python:request.get('key')=='history' and 'tab-pane fade card  show active' or 'tab-pane card fade'"
+	><form class="form-horizontal" title="History: Activate or deactivate the integrated history-mechanism." 
 		name="history_form" action="manage_changeWorkflow" method="post" enctype="multipart/form-data">
 		<input type="hidden" name="lang" tal:attributes="value python:request['lang']" />
 		<input type="hidden" name="key" value="history" />
@@ -595,7 +594,8 @@
 			</div>
 		</div><!-- .form-group -->
 		<div class="form-row">
-			<div class="controls save">
+			<div class="col-sm-2"></div>
+			<div class="col-sm-10 controls my-5">
 				<button name="btn" type="submit" class="btn btn-primary" value="BTN_CHANGE" tal:content="python:here.getZMILangStr('BTN_CHANGE')">Change</button>
 			</div>
 		</div>
@@ -605,7 +605,7 @@
 </div><!-- .tab-content -->
 
 </div><!-- #zmi-tab -->
-<tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
+<footer tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</footer>
 </body>
 </html>
 </tal:block>

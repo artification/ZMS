@@ -125,7 +125,7 @@ class ZMSContainerObject(
 
     # Role Manager.
     # -------------
-    def manage_addZMSCustom(self, meta_id, values={}, REQUEST=None):
+    def manage_addZMSCustom(self, meta_id=None, values={}, REQUEST=None):
       """
       Add a custom node of the type designated by meta_id in current context.
       @param meta_id: the meta-id / type of the new ZMSObject
@@ -137,8 +137,9 @@ class ZMSContainerObject(
       @return: the new node
       @rtype: C{zmsobject.ZMSObject}
       """
-      values['meta_id'] = meta_id
-      return self.manage_addZMSObject('ZMSCustom', values, REQUEST)
+      request = self.REQUEST
+      values['meta_id'] = request.get('ZMS_INSERT',meta_id)
+      return self.manage_addZMSObject('ZMSCustom', values, request)
 
 
     # --------------------------------------------------------------------------
@@ -667,7 +668,7 @@ class ZMSContainerObject(
             css.append( 'current')
             css.append( 'active')
             css.append( ob.meta_id + '1') 
-          elif ob.id != self.id and ob.id in current.getPhysicalPath():
+          elif ob.id != self.id and (ob.id in current.getPhysicalPath() or ob.getDeclId() in REQUEST['URL'].split('/')):
             css.append( 'active')
             css.append( ob.meta_id + '1') 
           else: 
@@ -692,7 +693,7 @@ class ZMSContainerObject(
              ((opt.get('complete', False)) or \
               (opt.get('deep', True) and ob.id != self.id and \
                 (ob.id in current.getPhysicalPath() or \
-                 ob.id in REQUEST['URL'].split('/')))):
+                 ob.getDeclId() in REQUEST['URL'].split('/')))):
             items.append( ob.getNavItems( current, REQUEST, opt, depth+1))
           items.append('</li>\n')
       if len( items) > 0:
@@ -965,11 +966,13 @@ class ZMSContainerObject(
     def manage_addZMSModule(self, lang, _sort_id, custom, REQUEST, RESPONSE):
       """
       Add module-node.
-      internal use only
+      Internal use only.
       @param lang: the language-id.
       @type lang: C{str}
-      @param id_prefix: the id-prefix.
-      @type id_prefix: C{str}
+      @param _sort_id: sort id
+      @type _sort_id: C{int}
+      @param custom: the meta-id
+      @type custom: C{str}
       @param REQUEST: the triggering request
       @type REQUEST: C{ZPublisher.HTTPRequest}
       @param RESPONSE: the triggering request

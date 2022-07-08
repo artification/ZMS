@@ -25,8 +25,8 @@ from OFS.Image import Image, File
 from email.generator import _make_boundary as choose_boundary
 import base64
 import copy
+import io
 import re
-import six
 import time
 import warnings
 import zExceptions 
@@ -132,13 +132,13 @@ IN:    clazz        [C{MyImage}|C{MyFile}]
 OUT:    blob        [MyImage|MyFile]
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 def createBlobField(self, objtype, file=b''):
-  if standard.is_bytes(file):
+  if isinstance(file,bytes):
     blob = uploadBlobField( self, objtype, file)
   elif isinstance(file, dict):
     data = file.get( 'data', '')
-    if standard.is_str(data):
-      data = standard.pybytes(data,'utf-8')
-      data = standard.PyBytesIO( data)
+    if isinstance(data, str):
+      data = bytes(data,'utf-8')
+      data = io.BytesIO( data)
     blob = uploadBlobField( self, objtype, data, file.get('filename', ''))
     if file.get('content_type'):
       blob.content_type = file.get('content_type')
@@ -156,7 +156,7 @@ def uploadBlobField(self, clazz, file=b'', filename=''):
   except:
     pass
   f = None
-  if isinstance(file,six.string_types):
+  if isinstance(file,str):
     f = re.findall('^data:(.*?);base64,([\s\S]*)$',file)
   if f:
     mt = f[0][0]
@@ -168,11 +168,11 @@ def uploadBlobField(self, clazz, file=b'', filename=''):
   elif clazz in [_globals.DT_FILE, 'file']:
     clazz = MyFile
   # blob = clazz( id='', title='', file='')
-  blob = clazz( id='', title='', file=standard.pybytes('','utf-8'))
+  blob = clazz( id='', title='', file=bytes('','utf-8'))
   blob.update_data(file, content_type=mt, size=len(file))
   blob.aq_parent = self
   blob.mediadbfile = None
-  blob.filename = standard.pystr(_fileutil.extractFilename( filename, undoable=True))
+  blob.filename = str(_fileutil.extractFilename( filename, undoable=True))
   # Check size.
   if self is not None:
     maxlength_prop = 'ZMS.input.%s.maxlength'%['file','image'][isinstance(blob,MyImage)]
@@ -192,11 +192,10 @@ Returns filename concatenated with language suffix.
 def getLangFilename(self, filename, lang):
   i = filename.rfind('.')
   name = filename[:i]
-  name = name.replace(' ', '_')
   ext = filename[i+1:]
   if len(self.getLangIds()) > 1 and lang is not None:
     suffix = '_' + lang
-    if len(name) < len(suffix) or name[-len(suffix):] != suffix:
+    if not name.endswith(suffix):
       name += suffix
   name += '.' + ext
   return name
@@ -371,7 +370,7 @@ class MyBlob(object):
                     RESPONSE.setStatus(206) # Partial content
 
                     data = self.data
-                    if isinstance(data,six.string_types):
+                    if isinstance(data,str) or isinstance(data,bytes):
                         RESPONSE.write(data[start:end])
                         return True
 
@@ -442,7 +441,7 @@ class MyBlob(object):
                             'Content-Range: bytes %d-%d/%d\r\n\r\n' % (
                                 start, end - 1, self.size))
 
-                        if isinstance(data,six.string_types):
+                        if isinstance(data,str) or isinstance(data,bytes):
                             RESPONSE.write(data[start:end])
 
                         else:
@@ -659,7 +658,7 @@ class MyBlob(object):
           try:
             data = mediadb.retrieveFile( mediadbfile)
           except:
-            standard.writeError( parent, "[getData]: can't retrieve file from mediadb: %s"%standard.pystr(mediadbfile))
+            standard.writeError( parent, "[getData]: can't retrieve file from mediadb: %s"%str(mediadbfile))
       else:
         data = getattr(self, 'data', '')
       return data
@@ -714,9 +713,9 @@ class MyBlob(object):
         if mediadb is not None and getattr(self,'mediadbfile') is None:
           self.mediadbfile = mediadb.storeFile( self)
           self.data = ''
-      # unset parent to avoid TypeError: Can't pickle objects in acquisition wrappers.
-      if parent.getType() != 'ZMSRecordSet':
-        self.aq_parent = None
+        # unset parent to avoid TypeError: Can't pickle objects in acquisition wrappers.
+        if parent.getType() != 'ZMSRecordSet':
+          self.aq_parent = None
 
 
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -740,13 +739,10 @@ class MyBlob(object):
       Returns filename.
       @rtype: C{string}
       """
-      filename = self.filename
-      if isinstance(filename,bytes):
-        filename = filename.decode()
+      filename = standard.pystr(self.filename)
       while filename.startswith( '_'):
         filename = filename[1:]
-      for ch in [ '+', '%', ' ', '!', '?', '#', '"', '(', ')', '&' ]:
-        filename = filename.replace(ch, '')
+      filename = "".join( x for x in filename if (x.isalnum() or x in "._-"))
       if filename != self.filename and len( self.data) > 0: 
         self.filename = filename
       return filename
@@ -779,9 +775,10 @@ class MyBlob(object):
     getDataSizeStr__roles__ = None
     def getDataSizeStr(self):
       """
-      Returns display string for file-size (KB).
+      Returns display string for file-size (kB).
+      Deprecated: Use standard.getDataSizeStr(len) instead!
+      @return: file-size in kB
       @rtype: C{string}
-      @deprecated: Use standard.getDataSizeStr(len) instead!
       """
       warnings.warn('Using MyBlob.getDataSizeStr() is deprecated.'
                    ' Use standard.getDataSizeStr(len) instead.',
@@ -797,6 +794,7 @@ class MyBlob(object):
     def getContentType(self):
       """
       Returns MIME-type (e.g. image/gif, text/xml).
+      @return: MIME-type
       @rtype: C{string}
       """
       return self.content_type
@@ -809,8 +807,9 @@ class MyBlob(object):
     def getMimeTypeIconSrc(self):
       """
       Returns the absolute-url of an icon representing the MIME-type of this MyBlob-object.
+      Deprecated: Use zmscontext.getMimeTypeIconSrc(mt) instead!
+      @return: icon url
       @rtype: C{string}
-      @deprecated: Use zmscontext.getMimeTypeIconSrc(mt) instead!
       """
       from Products.zms import _mimetypes
       warnings.warn('Using MyBlob.getMimeTypeIconSrc() is deprecated.'
@@ -868,18 +867,20 @@ class MyImage(MyBlob, Image):
       filename = _fileutil.getOSPath(_fileutil.extractFilename(getattr(self, 'filename', '')))
       content_type = getattr(self, 'content_type', '')
       if data2hex:
-        if content_type.startswith('text/') or content_type in ['application/css','application/javascript','image/svg']:
-          data = '<![CDATA[%s]]>'%standard.pystr(self.getData(sender),'utf-8')
+        data = self.getData(sender)
+        if [x for x in ['text/','application/css','application/javascript','image/svg'] if content_type.startswith(x)]:
+          data = standard.pystr(data)
+          data = '<![CDATA[%s]]>'%data
         else:
-          data = standard.bin2hex(standard.pybytes(self.getData(sender)))
+          data = bytes(data).hex()
         objtype = ' type="image"'
       else:
         filename = self.getFilename()
         filename = getLangFilename(sender, filename, self.lang)
         filename = '%s%s'%(base_path, filename)
       xml = '\n<data'
-      xml += ' width="%s"'%standard.pystr(getattr(self, 'width', ''))
-      xml += ' height="%s"'%standard.pystr(getattr(self, 'height', ''))
+      xml += ' width="%s"'%str(getattr(self, 'width', ''))
+      xml += ' height="%s"'%str(getattr(self, 'height', ''))
       xml += ' content_type="%s"'%content_type
       xml += ' filename="%s"'%filename
       xml += objtype + '>' + data
@@ -979,10 +980,12 @@ class MyFile(MyBlob, File):
       filename = _fileutil.getOSPath(_fileutil.extractFilename(getattr(self, 'filename', '')))
       content_type = getattr(self, 'content_type', '')
       if data2hex:
-        if content_type.startswith('text/') or content_type in ['application/css','application/javascript','image/svg']:
-          data = '<![CDATA[%s]]>'%standard.pystr(self.getData(sender),'utf-8')
+        data = self.getData(sender)
+        if [x for x in ['text/','application/css','application/javascript','image/svg'] if content_type.startswith(x)]:
+          data = standard.pystr(data)
+          data = '<![CDATA[%s]]>'%data
         else:
-          data = standard.bin2hex(standard.pybytes(self.getData(sender)))
+          data = bytes(data).hex()
         objtype = ' type="file"'
       else:
         filename = self.getFilename()
@@ -994,6 +997,19 @@ class MyFile(MyBlob, File):
       xml += objtype + '>' + data
       xml += '</data>'
       return xml
+
+
+################################################################################
+################################################################################
+
+class MyBlobDelegate(object):
+
+  def __init__(self, delegate):
+    self._delegate = delegate
+
+  delegate__roles__ = None
+  def delegate(self):
+    return self._delegate
 
 
 ################################################################################
@@ -1048,6 +1064,6 @@ class MyBlobWrapper(object):
     """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
     __str____roles__ = None
     def __str__(self):
-      return standard.pybytes(self.getData())
+      return bytes(self.getData())
 
 ################################################################################

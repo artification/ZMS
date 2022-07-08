@@ -54,7 +54,7 @@
 			><tal:block tal:condition="python:metaObjAttr['type']=='hint'"
 				><div class="zmi-hint" tal:content="structure elLabel">the hint</div>
 			</tal:block
-			><tal:block tal:condition="python:metaObjAttr['type']=='interface'"
+			><tal:block tal:condition="python:metaObjAttr['type']=='interface' and not metaObjAttr['id'].startswith('recordSet_Interface')"
 				><div class="zmi-interface" tal:content="structure python:here.attr(metaObjAttrId)">the interface</div
 			></tal:block
 
@@ -113,7 +113,8 @@
 
 	<div class="form-row">
 		<div class="controls save">
-			<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')">Save</button>
+			<button type="submit" name="btn" class="btn btn-primary" value="BTN_SAVE" tal:content="python:here.getZMILangStr('BTN_SAVE')"
+				 tal:condition="python:here.getPrimaryLanguage()==request.get('lang')">Save</button>
 			<button type="submit" name="btn" class="btn btn-secondary" value="BTN_CANCEL" tal:content="python:here.getZMILangStr('BTN_CANCEL')">Cancel</button>
 		</div>
 	</div><!-- .form-row -->

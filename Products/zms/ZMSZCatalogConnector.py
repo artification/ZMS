@@ -20,6 +20,8 @@
 # Imports.
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 from Products.ZCatalog import ZCatalog
+from Products.PluginIndexes.DateIndex.DateIndex import DateIndex
+from Products.PluginIndexes.KeywordIndex.KeywordIndex import KeywordIndex
 from zope.interface import implementer
 import copy
 import sys
@@ -28,11 +30,13 @@ import zExceptions
 # Product Imports.
 from Products.zms import standard
 from Products.zms import IZMSCatalogConnector
-from Products.zms import ZMSZCatalogAdapter
 from Products.zms import ZMSItem
 from Products.zms import _globals
 
 
+# ------------------------------------------------------------------------------
+#  ZMSZCatalogConnector.extra_column_ids:
+# ------------------------------------------------------------------------------
 extra_column_ids = ['loc', 'index_html', 'custom']
 
 
@@ -101,6 +105,7 @@ def addLexicon( container, cat):
 def getZCatalog(self, lang):
   cat_id = 'catalog_%s'%lang
   root = self.getRootElement()
+  # remove deprecated local catalog from client
   if root != self and cat_id in self.objectIds():
     self.manage_delObjects([cat_id])
   zcatalog = getattr(root, cat_id, None)
@@ -125,11 +130,12 @@ def recreateCatalog(self, zcm, lang):
   
   #-- Create catalog
   cat_id = 'catalog_%s'%lang
-  if cat_id in self.objectIds():
-    self.manage_delObjects([cat_id])
+  root = self.getRootElement()
+  if cat_id in root.objectIds():
+    root.manage_delObjects([cat_id])
   cat_title = 'Default catalog'
-  zcatalog = ZCatalog.ZCatalog(id=cat_id, title=cat_title, container=self)
-  self._setObject(zcatalog.id, zcatalog)
+  zcatalog = ZCatalog.ZCatalog(id=cat_id, title=cat_title, container=root)
+  root._setObject(zcatalog.id, zcatalog)
   zcatalog = getZCatalog(self, lang)
   writeChangesLog(zcatalog, '[recreateCatalog]: '+self.getZMILangStr('MSG_INSERTED')%zcatalog.meta_type)
   
@@ -142,10 +148,18 @@ def recreateCatalog(self, zcm, lang):
   
   #-- Add Indexes (incl. Columns)
   for attr_id in zcm._getAttrIds():
+    attr_type = 'string'
+    for meta_id in self.getMetaobjIds():
+      meta_obj_attr = self.getMetaobjAttr(meta_id,attr_id)
+      if meta_obj_attr:
+        attr_type = meta_obj_attr['type']
+        break
     index_name = 'zcat_index_%s'%attr_id
     index_type = zcm.getConfProperty('ZCatalog.TextIndexType','ZCTextIndex')
     if attr_id == 'home_id':
-      index_type = 'KeywordIndex'
+      index_type = KeywordIndex(attr_id)
+    elif attr_type == 'date':
+      index_type = DateIndex(attr_id)
     extra = None
     if index_type == 'ZCTextIndex':
       extra = Empty()
@@ -162,20 +176,6 @@ def recreateCatalog(self, zcm, lang):
       extra['splitter_max_len'] = 64
       extra['splitter_separators'] = '.+-_@'
       extra['splitter_single_chars'] = 0
-      if index_type == 'TextIndexNG2':
-        extra['use_converters'] = 1
-        extra['use_normalizer'] = ''
-        # setattr(index_extra,'use_stemmer','')
-        extra['use_stopwords'] = ''
-      elif index_type == 'TextIndexNG3':
-        extra['languages'] = (lang,)
-        extra['query_parser'] = 'txng.parsers.en'
-        extra['index_unknown_languages'] = True
-        extra['dedicated_storage'] = True
-        extra['use_stopwords'] = False
-        extra['use_normalizer'] = False
-        extra['use_converters'] = True
-        extra['use_stemmer'] = False
     zcatalog.manage_addColumn(index_name)
     zcatalog.manage_addIndex(index_name, index_type, extra)
 
@@ -195,8 +195,8 @@ class ZMSZCatalogConnector(
     # Properties.
     # -----------
     meta_type = 'ZMSZCatalogConnector'
-    icon = "++resource++zms_/img/ZCatalog.png"
-    icon_clazz = "icon-search"
+    icon = " fas fa-search"
+    icon_clazz = "icon-search fas fa-search"
 
     # Management Interface.
     # ---------------------
@@ -273,7 +273,7 @@ class ZMSZCatalogConnector(
               elif k == 'zcat_column_custom':
                 k = 'custom'
               elif k == 'standard_html':
-                v = ZMSZCatalogAdapter.remove_tags(self, v)
+                v = standard.remove_tags(v)
               xmlr += '<arr name="%s">'%k
               if isinstance(v,str):
                 for x in range(16):
@@ -297,7 +297,7 @@ class ZMSZCatalogConnector(
         xmlr += '<str name="msg">%s</str>'%standard.html_quote(msg)
         xmlr += '<int name="code">%i</int>'%status
         xmlr += '</lst>'
-      xml += standard.pystr(xmlr)
+      xml += str(xmlr)
       xml += '</response>'
       return xml
 
@@ -446,9 +446,12 @@ class ZMSZCatalogConnector(
         value = d.get(attr_id)
         setattr(node, attr_name, value)
       for attr_id in zcm._getAttrIds():
-        last_id = attr_id
         attr_name = 'zcat_index_%s'%attr_id
-        value = umlaut_quote(self, d.get(attr_id))
+        value = d.get(attr_id)
+        if value == 'None':
+          value = None
+        if value:
+          value = umlaut_quote(self, value)
         setattr(node, attr_name, value)
       # Reindex object.
       request = self.REQUEST
@@ -492,7 +495,8 @@ class ZMSZCatalogConnector(
         def cb(node, d):
           self._update(node, d)
         for root in [container]+self.getPortalClients():
-          result.append(zcm.get_sitemap(cb, root, recursive=True))
+          rcm = standard.nvl(root.getCatalogAdapter(),zcm)
+          result.append(rcm.get_sitemap(cb, root, recursive=True))
       result = [x for x in result if x]
       return ', '.join([x for x in result])
 
@@ -508,8 +512,7 @@ class ZMSZCatalogConnector(
       container = self.getLinkObj(uid)
       home_id = container.getHome().id
       try:
-        langs = request.get('langs', ';'.join(container.getLangIds())).split(';')
-        for lang in langs:
+        for lang in container.getLangIds():
           request.set('lang', lang)
           lresult = []
           lresult.append('language: %s'%lang)
@@ -527,7 +530,8 @@ class ZMSZCatalogConnector(
           # Reindex items to catalog.
           def cb(node, d):
             self._update(node, d)
-          lresult.append(zcm.get_sitemap(cb, container, recursive=True))
+          rcm = standard.nvl(container.getCatalogAdapter(),zcm)
+          lresult.append(rcm.get_sitemap(cb, container, recursive=True))
           lresult = [x for x in lresult if x]
           result.extend(lresult)
           # Log changes.

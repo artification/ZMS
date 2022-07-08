@@ -1,34 +1,34 @@
 {
     "version": "0.2.0",
+
     "configurations": [
         {
-            "name": "Python3: Zope-ZMS4",
+            "name": "ZMS5-DEV",
             "type": "python",
             "request": "launch",
-            "program": "/home/dev/workspace/zopefoundation/Zope/src/Zope2/Startup/serve.py",
-            // "module": "Zope2.Startup.serve",
+            "program": "~/vpy38/bin/runwsgi",
             "justMyCode": false,
             "console": "integratedTerminal",
             "args": [
-                "-d",
-                "-v",
-                "/home/zope/instance/zms4_dev/etc/zope.ini"
+                "--debug",
+                "--verbose",
+                "~/instance/zms5_dev/etc/zope.ini",
+                "debug-mode=on",
+                // "http_port=8086",
             ],
             "env": {
                 "PYTHONUNBUFFERED":"1",
-                "CONFIG_FILE": "/home/zope/instance/zms4_dev/etc/zope.ini",
-                "INSTANCE_HOME": "/home/zope/instance/zms4_dev",
-                "CLIENT_HOME": "/home/zope/instance/zms4_dev",
-                "PYTHON": "/home/zope/vpy37/bin/python",
-                "SOFTWARE_HOME": "/home/zope/vpy37/bin/"
+                "CONFIG_FILE": "~/instance/zms5_dev/etc/zope.ini",
+                "INSTANCE_HOME": "~/instance/zms5_dev",
+                "CLIENT_HOME": "~/instance/zms5_dev",
+                "PYTHON": "~/vpy38/bin/python",
+                "SOFTWARE_HOME": "~/vpy38/bin/"
+            },
+            "serverReadyAction":{
+                "pattern":"Serving on http://127.0.0.1:8081",
+                "uriFormat": "http://127.0.0.1:8081/manage_main",
+                "action": "openExternally",
             },
         },
-        {
-            "name":"Python3: Current File",
-            "type":"python",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal",
-        }
     ]
 }

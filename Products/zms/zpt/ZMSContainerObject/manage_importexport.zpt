@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en" tal:define="standard modules/Products.zms/standard">
-<tal:block tal:content="structure python:here.zmi_html_head(here,request)">zmi_html_head</tal:block>
+<head tal:replace="structure python:here.zmi_html_head(here,request)">zmi_html_head</head>
 <body tal:attributes="class python:here.zmi_body_class(id='importexport')">
-<tal:block tal:content="structure python:here.zmi_body_header(here,request)">zmi_body_header</tal:block>
+<header tal:replace="structure python:here.zmi_body_header(here,request)">zmi_body_header</header>
 <div id="zmi-tab">
 <tal:block tal:content="structure python:here.zmi_breadcrumbs(here,request)">zmi_breadcrumbs</tal:block>
 
@@ -32,11 +32,14 @@ function onExportFormatChange(el) {
 		filter_manager python:here.getFilterManager();
 		filterIds python:filter_manager.getFilterIds();
 		filters python:[x for x in [filter_manager.getFilter(x) for x in filterIds] 
-				if here.meta_id in x['meta_types']
-				and (request['AUTHENTICATED_USER'].has_role('Manager') or len(standard.intersection_list(here.getUserRoles(request['AUTHENTICATED_USER']),x.get('roles',[])))>0)
+				if (here.meta_id in x.get('meta_types',[]) 
+					or '*' in x.get('meta_types',[]))
+				and (request['AUTHENTICATED_USER'].has_role('Manager') 
+					or len(standard.intersection_list(here.getUserRoles(request['AUTHENTICATED_USER']),x.get('roles',[])))>0
+					or '*' in x.get('roles',[]))
 				];
-		importFilters python:[x for x in filters if len(standard.intersection_list([x['format']],['import'])) > 0];
-		exportFilters python:[x for x in filters if len(standard.intersection_list([x['format']],['export','XML','XHTML','myXML'])) > 0]">
+		importFilters python:[x for x in filters if len(standard.intersection_list([x.get('format','Missing filter format')],['import'])) > 0];
+		exportFilters python:[x for x in filters if len(standard.intersection_list([x.get('format','Missing filter format')],['export','XML','XHTML','myXML'])) > 0]">
 
 <form class="form-horizontal card" name="importForm" action="manage_import" method="post" enctype="multipart/form-data">
 	<input type="hidden" name="lang" tal:attributes="value request/lang" />
@@ -94,10 +97,10 @@ function onExportFormatChange(el) {
 					</tal:block>
 				</select>
 			</div>
-			<div id="div_charset" class="col-md-3 d-none">
+			<div id="div_charset" class="col-md-3" style="display:none;">
 				<tal:block tal:content="structure python:here.getSelect(fmName='exportForm',elName='ZMS_CHARSET',value='utf-8',inputtype='select',lang_str='Encoding',required=1,optpl=here.enumManager.getValues('charset'))"></tal:block>
 			</div><!-- .col-lg-3 -->
-			<div id="div_debug" class="col-md-2 d-none">
+			<div id="div_debug" class="col-md-2" style="display:none;">
 				<tal:block tal:condition="python:'zms_log' in here.getDocumentElement().objectIds()">
 					<input type="checkbox" name="debug:int" value="1" tal:attributes="checked python:['','checked'][int(request.get('debug',1)==1)]">
 					Debug
@@ -133,6 +136,6 @@ function onExportFormatChange(el) {
 </tal:block>
 
 </div><!-- #zmi-tab -->
-<tal:block tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</tal:block>
+<footer tal:content="structure python:here.zmi_body_footer(here,request)">zmi_body_footer</footer>
 </body>
 </html>

@@ -50,24 +50,37 @@ def getInternalLinkDict(self, url):
   reqBuffId = 'getInternalLinkDict.%s'%url
   try: return docelmnt.fetchReqBuff(reqBuffId)
   except: pass
+  request = self.REQUEST
   d = {}
   # Params.
-  ref_params = ''
-  if url.startswith('{$__') and url.endswith('__}'):
-    url = '{$%s}'%url[len('{$__'):-len('__}')]
+  anchor = ''
+  ref_params = {}
   if url.find(';') > 0:
-    ref_params = url[url.find(';'):-1]
+    anchor = url[url.find(';'):-1]
+    ref_params = dict(re.findall(';(\w*)=(\w*)', anchor))
     url = '{$%s}'%url[2:url.find(';')]
+  # Anchor.
+  ref_anchor = ''
+  if url.find('#') > 0:
+    ref_anchor = url[url.find('#'):-1]
+  # Get index_html.
   ref_obj = self.getLinkObj(url)
   if ref_obj is not None:
-    request = self.REQUEST
-    url = '{$%s%s}'%(self.getRefObjPath( ref_obj)[2:-1], ref_params)
+    # Prepare request.
+    bak_params = {}
+    for key in ref_params:
+      bak_params[key] = request.get(key, None)
+      request.set(key, ref_params[key])
+    url = '{$%s%s}'%(self.getRefObjPath( ref_obj)[2:-1], anchor)
     d['data-id'] = url
     d['data-url'] = getInternalLinkUrl(self, url, ref_obj)
     if not ref_obj.isActive(request):
       d['data-target'] = "inactive"
     elif self.getTrashcan().isAncestor(ref_obj):
       d['data-target'] = 'trashcan'
+    # Unprepare request.
+    for key in bak_params:
+      request.set(key, bak_params[key])
   else:
     d['data-id'] = "{$__%s__}"%url[2:-1]
     d['data-target'] = "missing"
@@ -131,36 +144,26 @@ class ZReferableItem(object):
   # ----------------------------------------------------------------------------
   def getRelativeUrl(self, path, url):
     import posixpath
-    u_dest = standard.urllib_parse.urlsplit(url)
-    u_src = standard.urllib_parse.urlsplit(path)
-    _uc1 = standard.urllib_parse.urlunsplit(u_dest[:2]+tuple('' for i in range(3)))
-    _uc2 = standard.urllib_parse.urlunsplit(u_src[:2]+tuple('' for i in range(3)))
+    from urllib.parse import urlsplit
+    from urllib.parse import urlunsplit
+    u_dest = urlsplit(url)
+    u_src = urlsplit(path)
+    _uc1 = urlunsplit(u_dest[:2]+tuple('' for i in range(3)))
+    _uc2 = urlunsplit(u_src[:2]+tuple('' for i in range(3)))
     if _uc1 != _uc2:
         ## This is a different domain
         return url
     _relpath = posixpath.relpath(u_dest.path, posixpath.dirname(u_src.path))
-    return './%s'%standard.urllib_parse.urlunsplit(('', '', _relpath, u_dest.query, u_dest.fragment))
+    return './%s'%urlunsplit(('', '', _relpath, u_dest.query, u_dest.fragment))
 
   # ----------------------------------------------------------------------------
   #  ZReferableItem.getRefObjPath:
   # ----------------------------------------------------------------------------
   def getRefObjPath(self, ob, anchor=''):
-    ref = ''
-    if ob is not None:
-      def default(*args, **kwargs):
-        self = args[0]
-        ob = args[1]['ob']
-        anchor = args[1]['anchor']
-        abs_home = self.getAbsoluteHome().getPhysicalPath()
-        ob_home = ob.getPhysicalPath()[len(abs_home)-1:]
-        path = '/'.join(ob_home).replace('/content/', '@')
-        if path.startswith('@'):
-          path = path[1:]
-        return '{$' + path + anchor + '}'
-      request = self.REQUEST
-      key = request.get('ExtensionPoint.ZReferableItem.getRefObjPath','ExtensionPoint.ZReferableItem.getRefObjPath')
-      ref = self.evalExtensionPoint(key,default,ob=ob,anchor=anchor)
-    return ref
+    ref = ob.get_uid()
+    if anchor:
+      ref += '#'+anchor
+    return '{$%s}'%ref
 
 
   """
@@ -389,7 +392,34 @@ class ZReferableItem(object):
         ref_params = dict(re.findall(';(\w*)=(\w*)', url[url.find(';'):-1]))
         url = '{$%s}'%url[2:url.find(';')]
       # Get object.
-      ob = self.evalExtensionPoint('ExtensionPoint.ZReferableItem.getLinkObj', default, url=url)
+      if url.startswith('{$') and url.endswith('}'):
+        url = url[2:-1]
+        # Strip suffixes
+        i = max(url.find('#'),url.find(','))
+        if i > 0:
+          url = url[:i]
+        if url.find('id:') >= 0:
+          catalog = self.getZMSIndex().get_catalog()
+          q = catalog({'get_uid':url})
+          for r in q:
+            zmspath  = '%s/'%r['getPath']
+            l = zmspath[1:-1].split('/')
+            ob = self
+            try:
+              for id in [x for x in l if x]:
+                ob = getattr(ob,id,None)
+              break
+            except:
+              pass
+        elif not url.startswith('__'):
+          url = url.replace('@','/content/')
+          l = url.split('/') 
+          ob =self.getDocumentElement()
+          try:
+            for id in [x for x in l if x]:
+              ob = getattr(ob,id,None)
+          except:
+            pass
       # Prepare request
       if ob is not None and ob.id not in self.getPhysicalPath():
         request = self.REQUEST

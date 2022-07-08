@@ -25,7 +25,6 @@ import codecs
 import fnmatch
 import os
 import re
-import six
 # Product Imports.
 from Products.zms import _confmanager
 from Products.zms import _multilangmanager
@@ -44,6 +43,13 @@ from Products.zms import ZMSFormatProvider, ZMSFormatProviderAcquired
 from Products.zms import ZMSMetacmdProvider, ZMSMetacmdProviderAcquired
 from Products.zms import ZMSWorkflowProvider, ZMSWorkflowProviderAcquired
 from Products.zms import ZMSRepositoryManager
+
+# ### Allow additional Python modules in restricted context
+# ### Use with:
+# ### import pdb; pdb.set_trace()
+# 
+# from AccessControl import allow_module
+# allow_module('pdb')
 
 """ZMS Product"""
 # Documentation string.
@@ -291,22 +297,3 @@ def translate_path(s):
   if s.startswith('/++resource++zms_/'):
     l = ['plugins', 'www']+s.split('/')[2:]
   return os.sep.join([ZMS_HOME]+l)
-
-################################################################################
-# Dynamic Modification of the Zope Skin
-################################################################################
-confdict = _confmanager.ConfDict.get()
-if six.PY2 and confdict.get('zmi.console') in ['light','dark']:
-  from App.special_dtml import DTMLFile
-  from App.Management import Navigation
-  from App.Management import Tabs
-  from App.ApplicationManager import DebugManager
-  from OFS.ObjectManager import ObjectManager
-  Navigation.manage = DTMLFile('skins/zope2/manage', globals())
-  setattr(Navigation, 'manage_page_style.css', DTMLFile('skins/zope2/manage_page_style_%s.css'%(confdict['zmi.console']), globals()))
-  Navigation.manage_page_header = DTMLFile('skins/zope2/manage_page_header', globals())
-  Navigation.manage_page_footer = DTMLFile('skins/zope2/manage_page_footer', globals())
-  Navigation.manage_menu = DTMLFile('skins/zope2/menu', globals())
-  Tabs.manage_tabs = DTMLFile('skins/zope2/manage_tabs', globals())
-  ObjectManager.manage_main = DTMLFile('skins/zope2/main', globals())
-  DebugManager.manage_main = DTMLFile('skins/zope2/debug', globals())

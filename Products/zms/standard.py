@@ -28,7 +28,6 @@ Scripts.  It can be accessed from Python with the statement
 # Imports.
 from __future__ import absolute_import
 from AccessControl.SecurityInfo import ModuleSecurityInfo
-from AccessControl import AuthEncoding
 from App.Common import package_home
 from App.config import getConfiguration
 from DateTime.DateTime import DateTime
@@ -38,7 +37,9 @@ import base64
 import cgi
 import copy
 import fnmatch
+import hashlib
 import inspect
+import io
 import json
 import logging
 import operator
@@ -50,24 +51,6 @@ import traceback
 import zExceptions
 import six
 
-from six.moves.urllib import parse as urllib_parse 
-from six.moves.urllib.parse import quote as urllib_quote
-from six.moves.urllib.parse import quote_plus as urllib_quote_plus
-from six.moves.urllib.parse import unquote as urllib_unquote
-from six.moves.urllib.parse import urlparse as urllib_urlparse
-from six import BytesIO as PyBytesIO
-
-# if six.PY3:
-#   import urllib.parse                 as urllib_parse
-#   from urllib.parse import quote_plus as urllib_quote_plus
-#   from urllib.parse import unquote    as urllib_unquote
-#   from urllib.parse import urlparse   as urllib_urlparse
-# else:
-#   import urlparse                     as urllib_parse
-#   from urllib import quote_plus       as urllib_quote_plus
-#   from urllib import unquote          as urllib_unquote
-#   from urlparse import urlparse       as urllib_urlparse
-
 # Product Imports.
 from Products.zms import _globals
 from Products.zms import _fileutil
@@ -75,77 +58,40 @@ from Products.zms import _mimetypes
 
 security = ModuleSecurityInfo('Products.zms.standard')
 
-security.declarePublic('is_str')
-security.declarePublic('is_bytes')
 security.declarePublic('pystr')
-security.declarePublic('pybytes')
-if six.PY2:
-  def is_str(v):
-    return isinstance(v,unicode)
-  def is_bytes(v):
-    return isinstance(v,str) or isinstance(v,bytes)
-  def pystr(object, encoding='utf-8', errors='strict'):
-    if not is_str(object):
-      if isinstance(object,str):
-        object = unicode(object,encoding,errors)
-      else:
-        object = unicode(object)
-    return object
-  def pybytes(object, encoding='utf-8', errors='strict'):
-    if is_str(object):
-      object = object.encode(encoding,errors)
-    return object
-  def pyopen(name, mode, buffering=-1, encoding=None):
-    return open(name, mode, buffering)
-  from cgi import escape as html_escape
-if six.PY3:
-  def is_str(v):
-    return isinstance(v,str)
-  def is_bytes(v):
-    return isinstance(v,bytes)
-  pystr = str
-  pybytes = bytes
-  pyopen = open
-  from html import escape as html_escape
-
-# added in six-1.12.0
-def six_ensure_binary(s, encoding='utf-8', errors='strict'):
-    """Coerce **s** to six.binary_type.
-    For Python 2:
-      - `unicode` -> encoded to `str`
-      - `str` -> `str`
-    For Python 3:
-      - `str` -> encoded to `bytes`
-      - `bytes` -> `bytes`
-    """
-    if isinstance(s, six.text_type):
-        return s.encode(encoding, errors)
-    elif isinstance(s, six.binary_type):
-        return s
-    else:
-        raise TypeError("not expecting type '%s'" % type(s))
-
-# added in six-1.12.0
-def six_ensure_str(s, encoding='utf-8', errors='strict'):
-    """Coerce *s* to `str`.
-    For Python 2:
-      - `unicode` -> encoded to `str`
-      - `str` -> `str`
-    For Python 3:
-      - `str` -> `str`
-      - `bytes` -> decoded to `str`
-    """
-    if not isinstance(s, (six.text_type, six.binary_type)):
-        raise TypeError("not expecting type '%s'" % type(s))
-    if six.PY2 and isinstance(s, six.text_type):
-        s = s.encode(encoding, errors)
-    elif six.PY3 and isinstance(s, six.binary_type):
-        s = s.decode(encoding, errors)
-    return s
+pystr_ = str
+def pystr(v, encoding='utf-8', errors='strict'):
+  if isinstance(v, bytes):
+    v = v.decode(encoding, errors)
+  elif not isinstance(v, str):
+    try:
+      v = str(v, encoding, errors)
+    except:
+      v = str(v)
+  return v
 
 
-def url_quote(s):
-  return urllib_quote(s)
+security.declarePublic('addZMSCustom')
+def addZMSCustom(self, meta_id=None, values={}, REQUEST=None):
+  """
+  Public alias for manage_addZMSCustom:
+  add a custom node of the type designated by meta_id in current context.
+
+  @param meta_id: the meta-id / type of the new ZMSObject
+  @type meta_id: C{str}
+  @param values: the dictionary of initial attribut-values assigned to the new ZMSObject 
+  @type values: C{dict}
+  @param REQUEST: the triggering request
+  @type REQUEST: C{ZPublisher.HTTPRequest}
+  @return: the new node
+  @rtype: C{zmsobject.ZMSObject}
+  """
+  return self.manage_addZMSCustom(meta_id, values, REQUEST)
+
+
+def url_quote(string, safe='/', encoding=None, errors=None):
+  from urllib.parse import quote
+  return quote(string, safe, encoding, errors)
 
 """
 @group PIL (Python Imaging Library): pil_img_*
@@ -204,16 +150,14 @@ def getINSTANCE_HOME():
 
 security.declarePublic('zmi_paths')
 def zmi_paths(context):
-	kw = {}
-	try:
-		from zmi.styles.subscriber import css_paths, js_paths
-		# remove zmi base css/js
-		kw["css_paths"] = css_paths(context)[:-1]
-		kw["js_paths"] = js_paths(context)[:-2]
-	except:
-		kw["css_paths"] = ("/++resource++zmi/bootstrap-4.1.1/bootstrap.min.css","/++resource++zmi/fontawesome-free-5.8.1/css/all.css",)
-		kw["js_paths"] = ("/++resource++zmi/jquery-3.2.1.min.js","/++resource++zmi/bootstrap-4.1.1/bootstrap.bundle.min.js",)
-	return kw
+  kw = {}
+  from zmi.styles.subscriber import css_paths, js_paths
+  # ZMI resources without Zope base css/js
+  # css_paths = ("/++resource++zmi/bootstrap-4.6.0/bootstrap.min.css","/++resource++zmi/fontawesome-free-5.15.2/css/all.css")
+  # js_paths = ("/++resource++zmi/jquery-3.5.1.min.js","/++resource++zmi/bootstrap-4.6.0/bootstrap.bundle.min.js",)
+  kw["css_paths"] = css_paths(context)[:-1]
+  kw["js_paths"] = js_paths(context)[:-2]
+  return kw
 
 
 security.declarePublic('FileFromData')
@@ -251,11 +195,71 @@ def set_response_headers(fn, mt='application/octet-stream', size=None, request=N
   RESPONSE = request.RESPONSE
   RESPONSE.setHeader('Content-Type', mt)
   content_disposition = ';  filename="%s"'%_fileutil.extractFilename(fn)
-  content_disposition = request.get('ZMS_ADDITIONAL_CONTENT_DISPOSITION','inline;') + content_disposition
+  content_disposition = request.get('ZMS_ADDITIONAL_CONTENT_DISPOSITION','inline') + content_disposition
   RESPONSE.setHeader('Content-Disposition',content_disposition)
   if size:
     RESPONSE.setHeader('Content-Length', size)
   RESPONSE.setHeader('Accept-Ranges', 'bytes')
+
+
+security.declarePublic('set_response_headers_cache')
+def set_response_headers_cache(context, request=None, cache_max_age=24*3600, cache_s_maxage=-1):
+  """
+  Set default and dynamic cache response headers according to ZMS_CACHE_EXPIRE_DATETIME
+  which is determined in ObjAttrs.isActive for each page element as the earliest time for invalidation.
+  I:Usage: Add to standard_html master template, e.g.::
+    <tal:block tal:define="
+      standard modules/Products.zms/standard;
+      cache_expire python:standard.set_response_headers_cache(this, request, cache_max_age=0, cache_s_maxage=6*3600)">
+    </tal:block>
+
+  @param cache_max_age: seconds the element remains in all caches (public/proxy and private/browser)
+  @param cache_s_maxage: seconds the element remains in public/proxy cache (value -1 means cache_s_maxage = cache_max_age)
+  @see: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control#directives
+  @see: http://nginx.org/en/docs/http/ngx_http_headers_module.html#expires
+  @see: https://www.nginx.com/resources/wiki/start/topics/examples/x-accel/
+  @returns: Tuple of expires date time in GMT as ISO8601 string and the seconds until expiration
+  @retype: C{tuple}
+  """
+  if request is not None:
+    is_preview = request.get('preview', '') == 'preview'
+    is_restricted = len([ob for ob in context.breadcrumbs_obj_path(portalMaster=False)
+                         if ob.attr('attr_dc_accessrights_restricted') in [1, True]]) > 0
+
+    if is_restricted or is_preview:
+      request.RESPONSE.setHeader('Cache-Control', 'no-cache')
+      request.RESPONSE.setHeader('Expires', '-1')
+      request.RESPONSE.setHeader('Pragma', 'no-cache')
+    else:
+      cache_s_maxage = cache_s_maxage==-1 and cache_max_age or cache_s_maxage
+      request.RESPONSE.setHeader('Cache-Control', 
+        's-maxage={}, max-age={}, public, must-revalidate, proxy-revalidate'.format(cache_s_maxage, cache_max_age))
+
+      now = time.time()
+      expire_datetime = DateTime(request.get('ZMS_CACHE_EXPIRE_DATETIME', now + cache_s_maxage))
+      t1 = expire_datetime.millis()
+      t0 = DateTime(now).millis()
+      expire_in_secs = int((t1-t0)/1000)
+      expire_datetime_gmt = expire_datetime.toZone('GMT')
+
+      if t1 > t0 and cache_s_maxage > expire_in_secs:
+        request.RESPONSE.setHeader('Expires', expire_datetime_gmt.asdatetime().strftime('%a, %d %b %Y %H:%M:%S %Z'))
+        request.RESPONSE.setHeader('Cache-Control','s-maxage={}, max-age={}, public, must-revalidate, proxy-revalidate'.format(expire_in_secs, expire_in_secs))
+        request.RESPONSE.setHeader('X-Accel-Expires', expire_in_secs)
+
+      return expire_datetime_gmt.ISO8601(), expire_in_secs
+
+  return None
+
+
+security.declarePublic('get_installed_packages')
+def get_installed_packages():
+  import subprocess
+  pipfreeze = subprocess.Popen("../../../bin/pip freeze --all",
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               shell=True, cwd=getPACKAGE_HOME(), universal_newlines=True)
+  packages = pipfreeze.communicate()[0].strip()
+  return packages
 
 
 security.declarePublic('umlaut_quote')
@@ -269,12 +273,12 @@ def umlaut_quote(s, mapping={}):
   @return: Quoted string
   @rtype: C{str}
   """
-  if is_bytes(s):
-    s = pystr(s)
+  if not isinstance(s,str):
+    s = str(s)
   for x in _globals.umlaut_map:
     mapping[x] = _globals.umlaut_map[x]
   for key in mapping:
-    s = s.replace(key, pystr(mapping[key]))
+    s = s.replace(key, str(mapping[key]))
   return s
 
 
@@ -303,11 +307,11 @@ def url_append_params(url, dict, sep='&'):
   i = url.find(qs)
   if i >= 0:
     qs = sep
-  for key in dict.keys():
+  for key in dict:
     value = dict[key]
     if isinstance(value, list):
       for item in value:
-        qi = key + ':list=' + url_quote(pystr(item))
+        qi = key + ':list=' + url_quote(str(item))
         url += qs + qi
         qs = sep
     else:
@@ -379,9 +383,9 @@ def string_maxlen(s, maxlen=20, etc='...', encoding=None):
   @rtype: C{str}
   """
   if encoding is not None:
-    s = pystr( s, encoding)
+    s = str( s, encoding)
   else:
-    s = pystr(s)
+    s = str(s)
   # remove all tags.
   s = re.sub( '<!--(.*?)-->', '', s)
   s = re.sub( '<script((.|\n|\r|\t)*?)>((.|\n|\r|\t)*?)</script>', '', s)
@@ -406,11 +410,12 @@ def url_encode(url):
   All unsafe characters must always be encoded within a URL.
   @see: http://www.ietf.org/rfc/rfc1738.txt
   @param url: Url
-  @type s: C{str}
+  @type url: C{str}
   @return: Encoded string
   @rtype: C{str}
   """
-  return ''.join([urllib_quote_plus(x) for x in url])
+  from urllib.parse import quote_plus
+  return ''.join([quote_plus(x) for x in url])
 
 
 security.declarePublic('guess_content_type')
@@ -425,7 +430,25 @@ def guess_content_type(filename, data):
   @rtype: C{tuple}
   """
   import zope.contenttype
-  mt, enc  = zope.contenttype.guess_content_type( filename, data)
+  # MIME-type guessing based on Zope-like filename syntax 
+  # using underscore as a delimiter for the filename extension
+  f_exts = {
+    '_css':'text/css',
+    '_js':'application/javascript',
+    '_svg':'image/svg+xml',
+    '_xml':'text/xml',
+    '_xsl':'text/xml',
+    '_vcf':'text/x-vcard vcf',
+    '_pdf':'application/pdf',
+    '_doc':'application/msword',
+    '_xls':'application/vnd.ms-excel'
+  }
+  default = None
+  for f_ext in f_exts.keys():
+    if filename.endswith(f_ext):
+      default = f_exts[f_ext]
+      break
+  mt, enc  = zope.contenttype.guess_content_type( filename, data, default)
   return mt, enc
 
 
@@ -433,33 +456,50 @@ def guess_content_type(filename, data):
 html_quote:
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 def html_quote(v, name='(Unknown name)', md={}):
+  import html
   if not isinstance(v,str):
-    v = pystr(v)
-  return html_escape(v, 1)
+    v = str(v)
+  return html.escape(v, 1)
 
 
-def bin2hex(m):
-  """
-  Returns a string with the hexadecimal representation of integer m.
-  @param m: Binary
-  @type m: C{int}
-  @return: String
-  @rtype: C{bytes}
-  """
-  import binascii
-  return six_ensure_str(binascii.hexlify(m))
-
-
-def hex2bin(m):
-  """
-  Converts a hexadecimal-string m to an integer.
-  @param m: Hexadecimal.
-  @type m: C{bytes}
-  @return: Integer
-  @rtype: C{bytes}
-  """
-  import binascii
-  return binascii.unhexlify(m)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+remove_tags
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+security.declarePublic('remove_tags')
+def remove_tags(s):
+  d = {
+    '&ndash;':'-',
+    '&nbsp;':' ',
+    '&ldquo;':'',
+    '&lsquo;':'\'',
+    '&rsquo;':'\'',
+    '&sect;':'',
+    '&Auml;':'\xc2\x8e',
+    '&Ouml;':'\xc2\x99',
+    '&Uuml;':'\xc2\x9a',
+    '&auml;':'\xc2\x84',
+    '&ouml;':'\xc2\x94',
+    '&uuml;':'\xc2\x81',
+    '&szlig;':'\xc3\xa1',
+  }
+  s = pystr(s)
+  for x in d:
+    s = s.replace(x,d[x])
+  s = re_sub('<script(.*?)>(.|\\n|\\r|\\t)*?</script>', ' ', s)
+  s = re_sub('<style(.*?)>(.|\\n|\\r|\\t)*?</style>', ' ', s)
+  s = re_sub('<[^>]*>', ' ', s)
+  while s.find('\t') >= 0:
+    s = s.replace('\t', ' ')
+  while s.find('\n') >= 0:
+    s = s.replace('\n', ' ')
+  while s.find('\r') >= 0:
+    s = s.replace('\r', ' ')
+  while s.find('\f') >= 0:
+    s = s.replace('\f', ' ')
+  while s.find('  ') >= 0:
+    s = s.replace('  ', ' ')
+  s = s.strip()
+  return s
 
 
 security.declarePublic('encrypt_schemes')
@@ -469,10 +509,7 @@ def encrypt_schemes():
   @return: list of encryption-scheme ids
   @rtype: C{list}
   """
-  ids = []
-  for id, prefix, scheme in AuthEncoding._schemes:
-    ids.append( id)
-  return ids
+  return list(hashlib.algorithms_available)
 
 
 security.declarePublic('encrypt_password')
@@ -481,27 +518,24 @@ def encrypt_password(pw, algorithm='md5', hex=False):
   Encrypts given password.
   @param pw: Password
   @type pw: C{str}
-  @param algorithm: Encryption-algorithm (md5, sha-1, etc.)
+  @param algorithm: Encryption-algorithm (md5, sha1, etc.)
   @type algorithm: C{str}
   @param hex: Hexlify
   @type hex: C{bool}
   @return: Encrypted password
   @rtype: C{str}
   """
+  algorithm = algorithm.lower()
+  algorithm = algorithm in ['sha-1','sha'] and 'sha1' or algorithm
   enc = None
-  if algorithm.upper() == 'SHA-1':
-    import sha
-    enc = sha.new(pw)
+  if algorithm in list(hashlib.algorithms_available):
+    h = hashlib.new(algorithm)
+    h.update(pw.encode())
     if hex:
-      enc = enc.hexdigest()
+      enc = h.hexdigest()
     else:
-      enc = enc.digest()
-  else:
-    for id, prefix, scheme in AuthEncoding._schemes:
-      if algorithm.upper() == id:
-        enc = scheme.encrypt(pw)
+      enc = h.digest()
   return enc
-
 
 security.declarePublic('encrypt_ordtype')
 def encrypt_ordtype(s):
@@ -565,7 +599,7 @@ def getFileTypeIconCSS(fn):
   """
   Returns the FontAwesome CSS class of an icon representing the specified file type.
   @param fn: filename with extension (e.g. picture.gif).
-  @type mt: C{str}
+  @type fn: C{str}
   @rtype: C{str}
   """
   fontAwesomeIconClasses = {
@@ -620,8 +654,6 @@ def unencode( p, enc='utf-8'):
       p[key] = unencode(p[key],enc)
   elif isinstance(p, list):
     p = [unencode(x,enc) for x in p]
-  elif six.PY2 and is_str(p):
-    p = pybytes(p,enc)
   return p
 
 
@@ -653,24 +685,11 @@ def id_quote(s, mapping={
   """
   s = umlaut_quote(s, mapping)
   valid = [ord(x[0]) for x in mapping.values()] + [ord('_')] + list(range(ord('0'), ord('9')+1)) + list(range(ord('A'), ord('Z')+1)) + list(range(ord('a'), ord('z')+1))
-  s = [x for x in s if is_str(x) and len(x) == 1 and ord(x) in valid]
+  s = [x for x in s if isinstance(x, str) and len(x) == 1 and ord(x) in valid]
   while len(s) > 0 and s[0] == '_':
       s = s[1:]
   s = ''.join(s).lower()
   return s
-
-
-security.declarePublic('form_quote')
-def form_quote(text, REQUEST):
-  """
-  Remove <form>-tags for Management Interface.
-  """
-  rtn = text
-  if isManagementInterface(REQUEST):
-    rtn = re.sub( '<form(.*?)>', '<noform\\1>', rtn)
-    rtn = re.sub( ' name="lang"', ' name="_lang"', rtn)
-    rtn = re.sub( '</form(.*?)>', '</noform\\1>', rtn)
-  return rtn
 
 
 def qs_append(qs, p, v):
@@ -703,39 +722,41 @@ def nvl(a1, a2, n=None):
     return a2
 
 
-class SessionBTreeWrapper:
-  
-  def __init__(self, t):
-    self.t = t
-  
-  security.declarePublic('set')
-  def set(self, k, v):
-    self.t.update({k:v})
-    return v
-
-  security.declarePublic('get')
-  def get(self, k, v=None):
-    return self.t.get(k,v)
-
-
 security.declarePublic('get_session')
 def get_session(context):
   """
   Get http-session.
   """
-  req = getattr( context, 'REQUEST', None)
-  req_session = req.get('SESSION',req.environ.get('beaker.session',None))
-  session = None
-  if req_session:
-    if req_session.get('__zms_session__') is None:
-      from BTrees.OOBTree import OOBTree
-      try:
-        req_session.set('__zms_session__',OOBTree()) # FIXME: why does set work?
-      except:
-        req_session['__zms_session__'] = OOBTree()
-    session = SessionBTreeWrapper(req_session.get('__zms_session__'))
+  request = getattr( context, 'REQUEST', None)
+  if request.get('SESSION', None) == None:
+    create_session_storage_if_neccessary(context)
+  session = request.get('SESSION',request.environ.get('beaker.session',None))
   return session
 
+security.declarePublic('create_session_storage_if_neccessary')
+def create_session_storage_if_neccessary(context):
+  """
+  Ensure containers for temporary data.
+  """
+  from OFS.Folder import Folder
+  from Products.Transience.Transience import TransientObjectContainer
+
+  root = context.getPhysicalRoot()
+  if not 'temp_folder' in root:
+    # Adding a 'folder' is a just fallback
+    # if a 'mount_point' is not available 
+    # like usually configured via zope.conf
+    temp_folder = Folder('temp_folder')
+    root._setObject('temp_folder', temp_folder)
+    # writeLog( context, 'Missing temp_folder added')
+  if not 'session_data' in root.temp_folder:
+    container = TransientObjectContainer(
+        'session_data',
+        title='Session Data Container',
+        timeout_mins=20
+    )
+    root.temp_folder._setObject('session_data', container)
+    # writeLog( context, 'Missing session_data-container added')
 
 security.declarePublic('get_session_value')
 def get_session_value(context, key, defaultValue=None):
@@ -766,6 +787,14 @@ def triggerEvent(context, *args, **kwargs):
   """
   l = []
   name = args[0]
+
+  # Object triggers.
+  if name.startswith('*.Object'):
+    root = context.getRootElement()
+    for node in root.objectValues():
+      m = getattr(node,name[2:],None)
+      if m is not None:
+        m(context) 
 
   # Always call local trigger for global triggers.
   if name.startswith('*.'):
@@ -841,6 +870,19 @@ def unescape(s):
   return s
 
 
+security.declarePublic('http_request')
+def http_request(url, method='GET', **kwargs):
+  import requests
+  response = None
+  if method == 'POST':
+    response = requests.post(url, **kwargs)
+  elif method == 'GET':
+    response = requests.get(url, **kwargs)
+  elif method == 'PURGE':
+    response = requests.request('PURGE', url, **kwargs)
+  return response
+
+
 security.declarePublic('http_import')
 def http_import(context, url, method='GET', auth=None, parse_qs=0, timeout=10, headers={'Accept':'*/*'}):
   """
@@ -861,7 +903,8 @@ def http_import(context, url, method='GET', auth=None, parse_qs=0, timeout=10, h
   @rtype: C{str}
   """
   # Parse URL.
-  u = urllib_urlparse(url)
+  import urllib.parse
+  u = urllib.parse.urlparse(url)
   writeLog( context, "[http_import.%s]: %s"%(method, str(u)))
   scheme = u[0]
   netloc = u[1]
@@ -883,30 +926,33 @@ def http_import(context, url, method='GET', auth=None, parse_qs=0, timeout=10, h
       netloc = proxy
 
   # Open HTTP connection.
-  from six.moves import http_client
+  import http.client
   writeLog( context, "[http_import.%s]: %sConnection(%s) -> %s"%(method, scheme, netloc, path))
   if scheme == 'http':
-    conn = http_client.HTTPConnection(netloc, timeout=timeout)
+    conn = http.client.HTTPConnection(netloc, timeout=timeout)
   else:
-    conn = http_client.HTTPSConnection(netloc, timeout=timeout)
+    conn = http.client.HTTPSConnection(netloc, timeout=timeout)
 
   # Set request-headers.
   if auth is not None:
+    from urllib.parse import unquote
     userpass = auth['username']+':'+auth['password']
-    userpass = base64.encodestring(urllib_unquote(userpass)).strip()
+    userpass = base64.encodestring(unquote(userpass)).strip()
     headers['Authorization'] =  'Basic '+userpass
   if method == 'GET' and query:
     path += '?' + query
     query = ''
+  else:
+    query = query.encode('utf-8')
   conn.request(method, path, query, headers)
   response = conn.getresponse()
   reply_code = response.status
   message = response.reason
 
   #### get parameter from content
-  if reply_code == 404 or reply_code >= 500:
+  if reply_code >= 400 or reply_code >= 500:
     error = "[%i]: %s at %s [%s]"%(reply_code, message, url, method)
-    writeLog( context, "[http_import.error]: %s"%error)
+    writeError( context, "[http_import.error]: %s"%error)
     raise zExceptions.InternalError(error)
   elif reply_code==200:
     # get content
@@ -965,6 +1011,8 @@ def writeLog(context, info):
   @rtype: C{str}
   """
   try:
+    if isinstance(info, bytes):
+      info = info.decode('utf-8')
     zms_log = getLog(context)
     severity = logging.DEBUG
     if zms_log.hasSeverity(severity):
@@ -983,6 +1031,8 @@ def writeBlock(context, info):
   @rtype: C{str}
   """
   try:
+    if isinstance(info, bytes):
+      info = info.decode('utf-8')
     zms_log = getLog(context)
     severity = logging.INFO
     if zms_log.hasSeverity(severity):
@@ -1001,6 +1051,8 @@ def writeError(context, info):
   @rtype: C{str}
   """
   t, v, tb = sys.exc_info()
+  if isinstance(info, bytes):
+    info = info.decode('utf-8')
   info += '\n'.join(traceback.format_tb(tb))
   try:
     info = "[%s@%s] "%(context.meta_id, '/'.join(context.getPhysicalPath())) + info
@@ -1028,13 +1080,16 @@ def re_sub( pattern, replacement, subject, ignorecase=False):
   Performs a search-and-replace across subject, replacing all matches of
   regex in subject with replacement. The result is returned by the sub()
   function. The subject string you pass is not modified.
-  convenience-function since re cannot be imported in restricted python
+  Convenience-function since re cannot be imported in restricted python.
+
   @param pattern: the regular expression to which this string is to be matched
   @type pattern: C{str}
   @param replacement: the string to be substituted for each match
   @type replacement: C{str}
-  @param replacement: ignore case considerations
-  @type replacement: C{Bool=False}
+  @param subject: the string in which the replacement has to be done
+  @type subject: C{str}
+  @param ignorecase: ignore case considerations
+  @type ignorecase: C{Bool=False}
   @return: the resulting string.
   @rtype: C{str}
   """
@@ -1249,10 +1304,10 @@ security.declarePublic('todayInRange')
 def todayInRange(start, end):
   """
   Checks if today is in given range.
-  @param start
-  @type start C{any}
-  @param end
-  @type end C{any}
+  @param start: start date
+  @type start: C{any}
+  @param end: end date
+  @type end: C{any}
   """
   b = True
   if start:
@@ -1269,10 +1324,10 @@ def todayInRange(start, end):
 security.declarePublic('compareDate')
 def compareDate(t0, t1):
   """
-  Compares two dates t0 and t1 and returns result.
-   +1: t0 &lt; t1
-    0: t0 == t1
-   -1: t0 &gt; t1
+  Compares two dates t0 and t1 and returns result::
+    +1: t0 &lt; t1
+     0: t0 == t1
+    -1: t0 &gt; t1
   @returns: A negative number if date t0 is before t1, zero if they are equal, or positive if t0 is after t1.
   @rtype: C{int}
   """
@@ -1357,6 +1412,24 @@ def parseLangFmtDate(s):
 #
 ############################################################################
 
+security.declarePublic('operator_contains')
+def operator_contains(c, v, ignorecase=False):
+  """
+  Check if collection contains value.
+  @param c: Collection
+  @type c: C{list|set|tuple}
+  @param v: Value
+  @type v: C{any}
+  @param ignorecase: Ignore Case-Sensitivity
+  @type ignorecase: C{Bool}
+  @return: Collection contains value
+  @rtype: C{Bool}
+  """
+  if ignorecase:
+    return v.lower() in [x.lower() for x in c]
+  else:
+    return v in c
+
 security.declarePublic('operator_gettype')
 def operator_gettype(v):
   """
@@ -1395,11 +1468,11 @@ def operator_getitem(a, b, c=None, ignorecase=True):
   @type b: C{any}
   @param c: Default-Value
   @type c: C{any}
+  @param ignorecase: Ignore Case-Sensitivity
+  @type ignorecase: C{Bool}
   @rtype: C{any}
   """
-  if ignorecase and is_str(b):
-    b = pybytes(b)
-  if ignorecase and is_bytes(b):
+  if ignorecase and ( isinstance(b, bytes) or isinstance(b, str) ):
     flags = re.IGNORECASE
     pattern = '^%s$'%b
     for key in a:
@@ -1481,8 +1554,8 @@ def localfs_read(filename, mode='b', cache='public, max-age=3600', REQUEST=None)
   directories in Config-Tab / Miscelleaneous-Section.
   @param filename: Filepath
   @type filename: C{string}
-  @param filename: Access mode
-  @type filename: C{string}, values are 'b' - binary
+  @param mode: Access mode
+  @type mode: C{string}, values are 'b' - binary
   @param cache Cache-Headers
   @type cache C{bool}
   @param REQUEST: the triggering request
@@ -1521,7 +1594,7 @@ def localfs_write(filename, v, mode='b'):
   # Get absolute filename.
   filename = _fileutil.absoluteOSPath(filename)
   # Write file.
-  _fileutil.exportObj( v, filename, mode)
+  return _fileutil.exportObj( v, filename)
 
 
 security.declarePublic('localfs_remove')
@@ -1662,7 +1735,11 @@ def sort_list(l, qorder=None, qorderdir='asc', ignorecase=1):
     tl = [(_globals.sort_item(x[qorder]), x) for x in l]
   if ignorecase and len(tl) > 0 and isinstance(tl[0][0], str):
     tl = [(str(x[0]).upper(), x[1]) for x in tl]
-  tl = sorted(tl,key=lambda x:x[0])
+  try:
+    tl = sorted(tl,key=lambda x:x[0])
+  except:
+    writeError(context, '[sort_list]: mixed datatypes normalized to strings')
+    tl = sorted(tl,key=lambda x:str(x[0]))
   tl = [x[1] for x in tl]
   if qorderdir == 'desc':
     tl.reverse()
@@ -1685,9 +1762,8 @@ def string_list(s, sep='\n', trim=True):
       l.append(i)
   return l
 
-if six.PY3:
-  def cmp(x, y):
-      return (x > y) - (x < y)
+def cmp(x, y):
+  return (x > y) - (x < y)
 
 security.declarePublic('is_equal')
 def is_equal(x, y):
@@ -1712,6 +1788,13 @@ def is_equal(x, y):
       return cmp(x.toXml(),y.toXml())==0
   return cmp(x, y)==0
 
+security.declarePublic('parse_json')
+def parse_json(*args, **kwargs):
+  """
+  Returns an object representation of the json-string.
+  @rtype: C{dict|list|int|etc.}
+  """
+  return json.loads(*args, **kwargs)
 
 security.declarePublic('str_json')
 def str_json(i, encoding='ascii', errors='xmlcharrefreplace', formatted=False, level=0, allow_booleans=True, sort_keys=True):
@@ -1731,37 +1814,35 @@ def str_json(i, encoding='ascii', errors='xmlcharrefreplace', formatted=False, l
         + (['','\n'][formatted]+(['','\t'][formatted]*level)+',').join(['"%s":%s'%(x,str_json(i[x],encoding,errors,formatted,level+1,allow_booleans,sort_keys)) for x in k]) \
         + '}'
   elif type(i) is time.struct_time:
-    try:
-      return '"%s"'%format_datetime_iso(i)
-    except:
-      pass
-  elif type(i) is int or type(i) is float or type(i) is bool:
+    return '"%s"'%format_datetime_iso(i)
+  elif type(i) is int or type(i) is float:
     return json.dumps(i)
-  elif i is not None:
-    if allow_booleans and i in ['true','false']:
-      return i
+  elif type(i) is bool:
+    if allow_booleans:
+      return json.dumps(i)
     else:
-      if not is_str(i):
-        i = pystr(i)
+      return str(i)
+  elif i is not None:
+    if allow_booleans and i in ['true', 'false']:
+      return i
+    elif not isinstance(i, str):
+        i = str(i)
     return '"%s"'%(i.replace('\\','\\\\').replace('"','\\"').replace('\n','\\n').replace('\r','\\r'))
   return '""'
 
 
 security.declarePublic('str_item')
-def str_item(i):
+def str_item(i, f=False):
   """
   Returns a string representation of the item.
   @rtype: C{str}
   """
-  if isinstance(i, list) or isinstance(i, tuple):
-    return '\n'.join([str_item(x) for x in i])
+  if isinstance(i, time.struct_time):
+    return format_datetime_iso(i)
+  elif isinstance(i, list) or isinstance(i, tuple):
+    return '\n'.join([str_item(x,f) for x in i])
   elif isinstance(i, dict):
-    return '\n'.join([str_item(i[x]) for x in i])
-  elif isinstance(i, time.struct_time):
-    try:
-      return format_datetime_iso(i)
-    except:
-      pass
+    return '\n'.join([str_item(i[x],f) for x in i if not f or not x.startswith('_')])
   if i is not None:
     return str(i)
   return ''
@@ -1777,8 +1858,8 @@ def filter_list(l, i, v, o='%'):
   @type i: C{str} or C{int}
   @param v: Field-value
   @type v: C{any}
-  @param v: Match-operator
-  @type v: C{str}, values are '%' (full-text), '=', '==', '>', '<', '>=', '<=', '!=', '<>'
+  @param o: Match-operator
+  @type o: C{str}, values are '%' (full-text), '=', '==', '>', '<', '>=', '<=', '!=', '<>'
   @return: Filtered list.
   @rtype: C{list}
   """
@@ -1949,11 +2030,11 @@ security.declarePublic('toXmlString')
 def toXmlString(context, v, xhtml=False, encoding='utf-8'):
   """
   Serializes value to ZMS XML-Structure.
-  @param context
-  @type context
-  @param v
-  @type v
-  @param xhtml
+  @param context: ZMS context
+  @type context: C{zmsobject.ZMSObject}
+  @param v: content node
+  @type v: C{zmsobject.ZMSObject}
+  @param xhtml: 
   @type xhtml
   @param encoding
   @type encoding
@@ -1967,17 +2048,17 @@ security.declarePublic('parseXmlString')
 def parseXmlString(xml):
   """
   Parse value from ZMS XML-Structure.
-  @param xml
-  @type xml: C{str} or C{BytesIO}
+  @param xml: xml data
+  @type xml: C{str} or C{io.BytesIO}
   @return: C{list} or C{dict}
   @rtype: C{any}
   """
   from Products.zms import _xmllib
   builder = _xmllib.XmlAttrBuilder()
-  if is_str(xml):
-    xml = pybytes(xml,'utf-8')
-  if is_bytes(xml):
-    xml = PyBytesIO(xml)
+  if isinstance(xml,str):
+    xml = bytes(xml,'utf-8')
+  if isinstance(xml,bytes):
+    xml = io.BytesIO(xml)
   v = builder.parse(xml)
   return v
 
@@ -1986,12 +2067,12 @@ security.declarePublic('processData')
 def processData(context, processId, data, trans=None):
   """
   Process data with custom transformation.
-  @param context
+  @param context: ZMS context
   @type context: C{ZMSObject}
   @param processId: the process-id
   @type processId: C{str}
   @param data: the xml-data
-  @type data: C{str} or C{BytesIO}
+  @type data: C{str} or C{io.BytesIO}
   @param trans: the transformation
   @type trans: C{str}
   @return: the transformed data
@@ -2018,7 +2099,7 @@ def dt_executable(context, v):
   @return:
   @rtype: C{Bool}
   """
-  if _globals.is_str_type(v):
+  if isinstance(v, bytes) or isinstance(v, str):
     if v.startswith('##'):
       return 'py'
     elif v.find('<tal:') >= 0:
@@ -2077,8 +2158,6 @@ def dt_html(context, value, REQUEST):
   value = re.sub( '</dtml-var>', '', value)
   dtml = DocumentTemplate.DT_HTML.HTML(value)
   value = dtml( context, REQUEST)
-  if type(value) is bytes:
-    value = value.decode('utf-8','ignore')
   return value
 
 def dt_py( context, script, kw={}):
@@ -2121,10 +2200,11 @@ def dt_py( context, script, kw={}):
 def dt_tal(context, text, options={}):
   """
   Execute given TAL-snippet.
+
   @param context: the context
   @type context: C{ZMSObject}
-  @param value: TAL-snippet
-  @type value: C{string}
+  @param text: TAL-snippet
+  @type text: C{string}
   @return: Result of the execution or None
   @rtype: C{any}
   """
@@ -2140,8 +2220,6 @@ def dt_tal(context, text, options={}):
   pt.setEnv(context, options)
   request = context.REQUEST
   rendered = pt.pt_render(extra_context={'here':context,'request':request})
-  if isinstance(rendered,bytes):
-    rendered = rendered.decode()
   return rendered
 
 #}
@@ -2250,10 +2328,6 @@ def sendMail(context, mto, msubject, mbody, REQUEST=None, mattach=None):
         part.add_header('Content-Disposition', 'attachment; filename="%s"'%filename)
         mime_msg.attach(part)
 
-      # TODO: Handle data from filesystem or other sources
-      elif isinstance(filedata, file):
-        raise NotImplementedError
-
   # Send mail.
   try:
     #writeBlock( context, "[sendMail]: %s"%mime_msg.as_string())
@@ -2262,15 +2336,6 @@ def sendMail(context, mto, msubject, mbody, REQUEST=None, mattach=None):
   except:
     writeError(context, '[sendMail]: can\'t send')
     return -1
-
-
-security.declarePublic('extutil')
-def extutil():
-  """
-  Returns util to handle zms3.extensions
-  """
-  from Products.zms import _extutil
-  return _extutil.ZMSExtensions()
 
 
 security.declarePublic('getPlugin')
@@ -2309,10 +2374,10 @@ def getTempFile( context, id):
   temp_file = getattr(temp_folder,id)
   data = temp_file.data
   b = data
-  if is_str(data):
-    b = pybytes(data)
-  elif not is_bytes(data):
-    b = pybytes(b'')
+  if isinstance(data,str):
+    b = bytes(data)
+  elif not isinstance(data,bytes):
+    b = bytes(b'')
     while data is not None:
        b += data.data
        data=data.next
@@ -2333,10 +2398,8 @@ def raiseError(error_type, error_value):
   raise getattr(zExceptions,error_type)(error_value)
 
 
-################################################################################
-# Define the initialize() util.
-################################################################################
 class initutil(object):
+  """Define the initialize() util."""
 
   def __init__(self):
     self.__attr_conf_dict__ = {}
@@ -2351,5 +2414,8 @@ class initutil(object):
     return http_import( self, url, method=method, auth=auth, parse_qs=parse_qs, timeout=timeout, headers=headers)
 
 security.apply(globals())
+<<<<<<< HEAD
 
 ################################################################################
+=======
+>>>>>>> upstream/main

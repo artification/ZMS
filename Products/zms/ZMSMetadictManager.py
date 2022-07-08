@@ -40,11 +40,8 @@ class ZMSMetadictManager(object):
     #
     ############################################################################
 
-    """
-    @see IRepositoryProvider
-    """
     def provideRepositoryMetas(self, r, ids=None):
-      self.writeBlock("[provideRepositoryMetas]: ids=%s"%str(ids))
+      standard.writeBlock(self, "[provideRepositoryMetas]: ids=%s"%str(ids))
       valid_ids = ['__metas__']
       if ids is None:
         ids = valid_ids
@@ -61,7 +58,7 @@ class ZMSMetadictManager(object):
     def updateRepositoryMetas(self, r):
       id = r['id']
       if id == '__metas__':
-        self.writeBlock("[updateRepositoryMetas]: id=%s"%id)
+        standard.writeBlock(self, "[updateRepositoryMetas]: id=%s"%id)
         self.metas = []
         for attr in r.get('Metas', []):
           self.metas.extend([attr['id'], attr])
@@ -80,9 +77,8 @@ class ZMSMetadictManager(object):
     #  ZMSMetadictManager.importMetadictXml
     # --------------------------------------------------------------------------
 
-    def _importMetadictXml(self, item, createIfNotExists=1):
-      id = item['id']
-      if createIfNotExists == 1:
+    def _importMetadictXml(self, item):
+        id = item['id']
         newId = id
         newAcquired = 0
         newName = item['name']
@@ -100,13 +96,13 @@ class ZMSMetadictManager(object):
           if metaObj is not None  and id not in self.getMetadictAttrs(meta_id):
             self.setMetaobjAttr(meta_id, None, newId=id, newType=id)
 
-    def importMetadictXml(self, xml, createIfNotExists=1):
+    def importMetadictXml(self, xml):
       v = standard.parseXmlString(xml)
       if isinstance(v, list):
         for item in v:
-          self._importMetadictXml(item, createIfNotExists)
+          self._importMetadictXml(item)
       else:
-        self._importMetadictXml(v, createIfNotExists)
+        self._importMetadictXml(v)
 
 
     # --------------------------------------------------------------------------
@@ -367,7 +363,7 @@ class ZMSMetadictManager(object):
               self.importMetadictXml(xml=f)
             else:
               filename = REQUEST['init']
-              self.importConf(filename, createIfNotExists=1)
+              self.importConf(filename)
             message = self.getZMILangStr('MSG_IMPORTED')%('<i>%s</i>'%filename)
           
           # Move to.
@@ -384,9 +380,9 @@ class ZMSMetadictManager(object):
         # Handle exception.
         except:
           standard.writeError(self, "[manage_changeMetaProperties]")
-          error = standard.pystr( sys.exc_info()[0])
+          error = str( sys.exc_info()[0])
           if sys.exc_info()[1]:
-            error += ': ' + standard.pystr( sys.exc_info()[1])
+            error += ': ' + str( sys.exc_info()[1])
           target = self.url_append_params( target, { 'manage_tabs_error_message':error})
         
         # Return with message.

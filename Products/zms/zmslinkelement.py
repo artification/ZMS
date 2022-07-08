@@ -29,7 +29,7 @@ from Products.zms import standard
 from Products.zms import _confmanager
 from Products.zms import _xmllib
 from Products.zms import _zreferableitem
-
+from Products.zms import zmslinkelement
 
 """
 ################################################################################
@@ -70,7 +70,7 @@ class ZMSLinkElement(zmscustom.ZMSCustom):
     # Management Permissions.
     # -----------------------
     __authorPermissions__ = (
-        'manage', 'manage_main', 'manage_main_iframe', 'manage_workspace',
+        'manage', 'manage_main', 'manage_workspace',
         'manage_changeProperties', 'manage_changeTempBlobjProperty',
         'manage_moveObjUp', 'manage_moveObjDown', 'manage_moveObjToPos',
         'manage_cutObjects', 'manage_copyObjects', 'manage_pasteObjs',
@@ -173,7 +173,7 @@ class ZMSLinkElement(zmscustom.ZMSCustom):
         ##### Failure Message ####
         except ConstraintViolation:
           target = REQUEST.get( 'manage_target', '%s/manage_main'%self.absolute_url())
-          message = "[ConstraintViolation]: " + standard.pystr( sys.exc_info()[1])
+          message = "[ConstraintViolation]: " + str( sys.exc_info()[1])
       
       # Return with message.
       target = self.url_append_params( target, { 'lang': lang, 'manage_tabs_message': message})

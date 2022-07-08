@@ -22,6 +22,8 @@ function zmiSelectObject(sender) {
 		parent.selectObject(href,titlealt,uid);
 	}
 	self.window.parent.zmiModal("hide");
+	// console.log('function zmiSelectObject: prevent link propagation on selecting click')
+	return false;
 }
 
 /**
@@ -152,7 +154,6 @@ function zmiBodyContentSearchDone() {
 						var phys_path = $(this).attr('href');
 						var result = $.ajax({
 									url: phys_path.replace('/manage','/ajaxGetNode'),
-									data: {'get_attrs:int':0},
 									contentType:'text/xml;charset=UTF-8',
 									async: false
 									}).responseText;

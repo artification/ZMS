@@ -22,8 +22,8 @@ from distutils.version import LooseVersion
 import ZPublisher.HTTPRequest
 import collections
 import copy
+import io
 import os
-import six
 import sys
 import time
 import zExceptions
@@ -35,6 +35,7 @@ from Products.zms import zopeutil
 from Products.zms import _blobfields
 from Products.zms import _fileutil
 from Products.zms import _globals
+from Products.zms import _multilangmanager
 from Products.zms import _ziputil
 
 
@@ -93,11 +94,11 @@ class ZMSMetaobjManager(object):
     # --------
     valid_types =     ['amount', 'autocomplete', 'boolean', 'color', 'date', 'datetime', 'dictionary', 'file', 'float', 'identifier', 'image', 'int', 'list', 'multiautocomplete', 'multiselect', 'password', 'richtext', 'select', 'string', 'text', 'time', 'url', 'xml']
     valid_zopeattrs = ['method', 'py', 'zpt', 'interface', 'resource']
-    valid_xtypes =    ['constant', 'delimiter', 'hint']+valid_zopeattrs
-    valid_datatypes = sorted(valid_types+valid_xtypes)
+    valid_xtypes =    ['constant', 'delimiter', 'hint'] + valid_zopeattrs
+    valid_datatypes = sorted(valid_types + valid_xtypes)
     valid_objtypes =  [ 'ZMSDocument', 'ZMSObject', 'ZMSTeaserElement', 'ZMSRecordSet', 'ZMSResource', 'ZMSReference', 'ZMSLibrary', 'ZMSPackage', 'ZMSModule']
     valid_zopetypes = [ 'DTML Method', 'DTML Document', 'External Method', 'File', 'Folder', 'Image', 'Page Template', 'Script (Python)', 'Z SQL Method']
-    deprecated_types = [] # [ 'DTML Method', 'DTML Document', 'method']
+    deprecated_types = [ 'DTML Method', 'DTML Document', 'method']
 
 
     ############################################################################
@@ -106,9 +107,6 @@ class ZMSMetaobjManager(object):
     #
     ############################################################################
 
-    """
-    @see IRepositoryProvider
-    """
     def provideRepositoryModel(self, r, ids=None):
       standard.writeBlock(self,"[provideRepositoryModel]: ids=%s"%str(ids))
       valid_ids = self.getMetaobjIds()
@@ -125,12 +123,20 @@ class ZMSMetaobjManager(object):
             if key not in mandatory_keys:
               del d[key]
           d['__filename__'] = [[],[package]][len(package)>0]+[id,'__init__.py']
+          # Lang-Dict.
+          lang_dict = self.get_lang_dict()
+          # (1) lang-dict entry must start with id
+          # (2) and id must match prefix separated by exactly or must not be element of other ids
+          other_ids = [x for x in valid_ids if x != id]
+          l = [x for x in lang_dict if x.startswith('%s.'%id) and (x[:x.rfind('.')]==id or not x[:x.rfind('.')] in other_ids)]
+          if l:
+            d['lang_dict'] = {x:lang_dict[x] for x in l}
           for attr in attrs:
             syncZopeMetaobjAttr(self, d, attr)
             mandatory_keys = ['id', 'name', 'type', 'meta_type', 'default', 'keys', 'mandatory', 'multilang', 'ob', 'repetitive']
             if attr['type']=='interface':
               attr['name'] = attr['id']
-            if attr['type']=='constant':
+            if (o['type'] == 'ZMSRecordSet' and attr.get('custom')) or attr['type'] == 'constant':
               mandatory_keys += ['custom']
             for key in list(attr):
               if not key in mandatory_keys:
@@ -164,7 +170,33 @@ class ZMSMetaobjManager(object):
             if newType in ['resource']:
               newCustom = _blobfields.createBlobField( self, _blobfields.MyFile, {'data':newCustom,'filename':newId})
             self.setMetaobjAttr(id, oldId, newId, newName, newMandatory, newMultilang, newRepetitive, newType, newKeys, newCustom, newDefault)
+        # Lang-Dict.
+        if 'lang_dict' in r:
+          lang_dict = self.get_lang_dict()
+          lang_dict = {**lang_dict, **r['lang_dict']} # merge
+          self.set_lang_dict(lang_dict)
       return id
+
+
+    """
+    @see IRepositoryProvider
+    """
+    def translateRepositoryModel(self, r):
+      l = []
+      for k in r:
+          v  = r[k]
+          # map attributes
+          v['attrs'] = v.get('Attrs',[])
+          # map Zope-native attributes (py, zpt, etc.)
+          for attr in v['attrs']:
+              if 'data' in attr:
+                  attr['custom'] = attr['data']
+                  if attr.get('type') in ['resource']:
+                    attr['custom'] = _blobfields.createBlobField( self, _blobfields.MyFile, {'data':attr['custom'],'filename':attr['id']})
+                  del attr['data']
+          d = {'key':k,'value':v}
+          l.append(d)
+      return l
 
 
     ############################################################################
@@ -176,13 +208,12 @@ class ZMSMetaobjManager(object):
     # --------------------------------------------------------------------------
     #  ZMSMetaobjManager.importMetaobjXml
     # --------------------------------------------------------------------------
-    def _importMetaobjXml(self, item, createIfNotExists=1, createIdsFilter=None):
+    def _importMetaobjXml(self, item, createIdsFilter=None):
       ids = []
       id = item['key']
       standard.writeBlock(self,'[ZMSMetaobjManager._importMetaobjXml]: id=%s'%str(id))
       meta_types = list(self.model)
-      if (createIfNotExists == 1) and \
-         (createIdsFilter is None or (id in createIdsFilter)):
+      if createIdsFilter is None or id in createIdsFilter:
         # Register Meta Attributes.
         metadictAttrs = []
         if id in meta_types:
@@ -201,12 +232,14 @@ class ZMSMetaobjManager(object):
         if id in ids:
           self.delMetaobj( id)
         # Set Object.
+        standard.writeBlock(self,'[ZMSMetaobjManager._importMetaobjXml]: setMetaobj(%s)'%str(id))
         self.setMetaobj( newValue)
         # Set Attributes.
         attr_ids = []
         for attr in newAttrs:
           # Mandatory.
           attr_id = attr['id']
+          standard.writeBlock(self,'[ZMSMetaobjManager._importMetaobjXml]: setMetaobjAttr(%s,%s)'%(str(id),str(attr_id)))
           newName = attr['name']
           newMandatory = attr.get('mandatory', 0)
           newMultilang = attr.get('multilang', 0)
@@ -257,16 +290,21 @@ class ZMSMetaobjManager(object):
           if attr_id not in attr_ids:
             self.setMetaobjAttr( id, None, attr_id, newName, newMandatory, newMultilang, newRepetitive, newType, newKeys, newCustom, newDefault)
             attr_ids.append(attr_id)
+        # Lang-Dict.
+        if '__lang_dict__' in newValue:
+          lang_dict = self.get_lang_dict()
+          lang_dict = {**lang_dict, **newValue['__lang_dict__']} # merge
+          self.set_lang_dict(lang_dict)
       return id
 
-    def importMetaobjXml(self, xml, createIfNotExists=1, createIdsFilter=None):
+    def importMetaobjXml(self, xml, createIdsFilter=None):
       self.REQUEST.set( '__get_metaobjs__', True)
       ids = []
       v = standard.parseXmlString(xml)
       if not isinstance(v, list):
         v = [v]
       for item in v:
-        id = self._importMetaobjXml(item, createIfNotExists, createIdsFilter)
+        id = self._importMetaobjXml(item, createIdsFilter)
         ids.append( id)
       if len( ids) == 1:
         ids = ids[ 0]
@@ -276,6 +314,7 @@ class ZMSMetaobjManager(object):
     def exportMetaobjXml(self, ids, REQUEST=None, RESPONSE=None):
       value = []
       revision = '0.0.0'
+      valid_ids = self.getMetaobjIds()
       for id in effective_ids(self, ids):
         ob = None
         context = self
@@ -290,9 +329,9 @@ class ZMSMetaobjManager(object):
         for attr_id in [x['id'] for x in ob['attrs']]:
           attr = self.getMetaobjAttr(id, attr_id)
           mandatory_keys = ['id', 'name', 'type', 'meta_type', 'default', 'keys', 'mandatory', 'multilang', 'ob', 'repetitive']
-          if attr['type']=='interface':
+          if attr['type'] == 'interface':
             attr['name'] = attr['id']
-          if attr['type']=='constant':
+          if (ob['type'] == 'ZMSRecordSet' and attr.get('custom')) or attr['type'] == 'constant':
             mandatory_keys += ['custom']
           for key in list(attr):
             if (not attr[key] and REQUEST is None) or \
@@ -306,6 +345,14 @@ class ZMSMetaobjManager(object):
         for key in ['attrs', 'acquired']:
           if key in ob:
             del ob[key]
+        # Lang-Dict.
+        lang_dict = self.get_lang_dict()
+        # (1) lang-dict entry must start with id
+        # (2) and id must match prefix separated by exactly or must not be element of other ids
+        other_ids = [x for x in valid_ids if x != id]
+        l = [x for x in lang_dict if x.startswith('%s.'%id) and (x[:x.rfind('.')]==id or not x[:x.rfind('.')] in other_ids)]
+        if l:
+          ob['__lang_dict__'] = {x:lang_dict[x] for x in l}
         # Value.
         value.append({'key':id,'value':ob})
       if len(value)==1:
@@ -380,8 +427,7 @@ class ZMSMetaobjManager(object):
             tmplt = getattr(obj, tmpltId, None)
             if tmplt is not None:
               v = tmplt(obj, obj.REQUEST)
-              if type(v) is bytes:
-                v = v.decode('utf-8','ignore')
+              v = standard.pystr(v)
               break
       return v
 
@@ -597,7 +643,7 @@ class ZMSMetaobjManager(object):
         # Self-learning auto-complete attributes.
         if attr.get('type') in ['autocomplete', 'multiautocomplete']:
           keys = attr['keys']
-          if ''.join(keys).find('<dtml') < 0:
+          if ''.join(keys).find('<dtml') < 0 and ''.join(keys).find('##') < 0:
             if not isinstance(value, list):
               value = [value]
             for v in value:
@@ -722,7 +768,7 @@ class ZMSMetaobjManager(object):
     #  Set/add meta-object attribute with specified values.
     # --------------------------------------------------------------------------
     def setMetaobjAttr(self, id, oldId, newId, newName='', newMandatory=0, newMultilang=1, newRepetitive=0, newType='string', newKeys=[], newCustom='', newDefault=''):
-      self.writeBlock("[setMetaobjAttr]: %s %s %s"%(str(id), str(oldId), str(newId)))
+      standard.writeBlock(self, "[setMetaobjAttr]: %s %s %s"%(str(id), str(oldId), str(newId)))
       self.clearReqBuff('ZMSMetaobjManager')
       ob = self.__get_metaobj__(id)
       if ob is None: return
@@ -758,7 +804,7 @@ class ZMSMetaobjManager(object):
           newCustom = ''
           newCustom += '<!-- '+ newId + ' -->\n\n'
           newCustom += '<tal:block tal:define="zmscontext options/zmscontext;\n'
-          newCustom += '\t\ttitle python:zmscontext getTitle(request);">\n'
+          newCustom += '\t\ttitle python:zmscontext.getTitle(request);">\n'
           newCustom += '\t<h4 tal:content="structure title">the title</h4>\n'
           newCustom += '</tal:block>\n\n'
           newCustom += '<!--/ '+ newId + ' -->\n'
@@ -797,9 +843,12 @@ class ZMSMetaobjManager(object):
           newCustom += 'return "\\n".join(p)\n'
           newCustom += '\n'
           newCustom += '# --// /'+ newId + ' //--\n'
-        elif newType in [ 'Z SQL Method']:
+        elif newType in ['Z SQL Method']:
           newCustom = ''
-          newCustom += '<connection>%s</connection>\n'%self.SQLConnectionIDs()[0][1]
+          if self.SQLConnectionIDs():
+            newCustom += '<connection>%s</connection>\n'%self.SQLConnectionIDs()[0][1]
+          else:
+            newCustom += '<connection>NA</connection>\n' 
           newCustom += '<params></params>\n'
           newCustom += 'SELECT * FROM tablename\n'
       
@@ -834,7 +883,7 @@ class ZMSMetaobjManager(object):
       mapTypes = {'method':'DTML Method','py':'Script (Python)','zpt':'Page Template'}
       message = ''
       if newType in ['interface']:
-        newType = standard.dt_executable(self, newCustom)
+        newType = standard.dt_executable(self, standard.pystr(newCustom, encoding='utf-8', errors='replace'))
         if not newType:
           newType = 'method'
         newName = '%s: %s'%(newId, newType)
@@ -846,7 +895,7 @@ class ZMSMetaobjManager(object):
         zopeutil.removeObject(self, newObId)
         # Insert Zope-Object.
         if isinstance(newCustom,_blobfields.MyBlob): newCustom = newCustom.getData()
-        if standard.is_str(newCustom): newCustom = newCustom.replace('\r', '')
+        if isinstance(newCustom, str): newCustom = newCustom.replace('\r', '')
         try:
           zopeutil.addObject(self, mapTypes[newType], newObId, newName, newCustom)
           del attr['custom']
@@ -897,10 +946,9 @@ class ZMSMetaobjManager(object):
         # Insert Zope-Object.
         if isinstance(newCustom,_blobfields.MyBlob): newCustom = newCustom.getData()
         # Line-breaks.
-        if standard.is_str(newCustom): 
-           newCustom = newCustom.replace('\r', '')
+        if isinstance(newCustom, str): newCustom = newCustom.replace('\r', '')
          # Strip errors.
-        if isinstance(newCustom,six.string_types): 
+        if isinstance(newCustom,str): 
            if newCustom.find("## Errors:") >= 0:
              lines = [x for x in newCustom.split('\n')]
              remove = False
@@ -1137,6 +1185,19 @@ class ZMSMetaobjManager(object):
             if (len(attr_id) > 0 and len(newName) > 0 and len(newType) > 0) or newType in self.getMetadictAttrs():
               message += self.setMetaobjAttr( id, None, attr_id, newName, newMandatory, newMultilang, newRepetitive, newType, newKeys, newCustom, newDefault)
               message += self.getZMILangStr('MSG_INSERTED')%attr_id
+            # Lang-Dict.
+            for key in REQUEST.form.keys():
+              if key.startswith('_lang_dict_key_'):
+                i = int(key[len('_lang_dict_key_'):])
+                if REQUEST[key]:
+                  lang_dict = self.get_lang_dict()
+                  k = '%s.%s'%(id,REQUEST[key].strip())
+                  lang_dict[k] = {}
+                  for key2 in REQUEST.form.keys():
+                    if key2.startswith('_lang_dict_value_%i_'%i):
+                      lang_id = key2[len('_lang_dict_value_%i_'%i):]
+                      lang_dict[k][lang_id] = REQUEST[key2].strip()
+                  self.set_lang_dict(lang_dict)
           elif key == 'obj' and btn == 'BTN_SAVE':
             # Change Acquired-Object.
             subobjects = REQUEST.get('obj_subobjects', 0)
@@ -1178,6 +1239,7 @@ class ZMSMetaobjManager(object):
               self.setMetaobj( newValue)
               # Insert Attributes.
               if newValue['type'] == 'ZMSDocument':
+                message += self.setMetaobjAttr(id, None, newId='icon_clazz', newName='Icon (Class)', newType='constant', newCustom='fas fa-file-alt')
                 message += self.setMetaobjAttr(id, None, newId='titlealt', newType='titlealt')
                 message += self.setMetaobjAttr(id, None, newId='title', newType='title')
               elif newValue['type'] == 'ZMSTeaserElement':
@@ -1258,15 +1320,15 @@ class ZMSMetaobjManager(object):
                  for name in zip_buffer.namelist():
                    if name.endswith(".xml"):
                      filename = name
-                     xmlfile = standard.PyBytesIO(zip_buffer.read(filename))
+                     xmlfile = io.BytesIO(zip_buffer.read(filename))
                      break
               # parse xml
               if not immediately:
                 xml = xmlfile.read()
                 # open string-io.
-                xmlfile = standard.PyBytesIO(xml)
+                xmlfile = io.BytesIO(xml)
                 v = standard.parseXmlString(xmlfile)
-                xmlfile = standard.PyBytesIO(xml)
+                xmlfile = io.BytesIO(xml)
                 if not isinstance(v,list):
                   v = []
                 if temp_id in temp_folder.objectIds():
@@ -1321,9 +1383,9 @@ class ZMSMetaobjManager(object):
         if RESPONSE:
           if len( message) > 0:
             message += ' (in '+str(int((time.time()-t0)*100.0)/100.0)+' secs.)'
-            target = self.url_append_params( target, { messagekey: message})
-          target = self.url_append_params( target, { 'lang': lang, 'id':id, 'attr_id':REQUEST.get('attr_id', '')})
-          target = self.url_append_params( target, extra)
+            target = self.url_append_params( target, { messagekey: message}, sep='&')
+          target = self.url_append_params( target, { 'lang': lang, 'id':id, 'attr_id':REQUEST.get('attr_id', '')}, sep='&')
+          target = self.url_append_params( target, extra, sep='&')
           if 'inp_id_name' in REQUEST:
             target += '&inp_id_name=%s'%REQUEST.get('inp_id_name')
             target += '&inp_name_name=%s'%REQUEST.get('inp_name_name')
